@@ -11,6 +11,9 @@ importers:
       '@eslint/js':
         specifier: ^9.39.5
         version: 9.39.5
+      '@kairo/music-engine':
+        specifier: workspace:*
+        version: link:packages/music-engine
       '@kairo/shared':
         specifier: workspace:*
         version: link:packages/shared

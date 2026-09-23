@@ -1,6 +1,6 @@
 # Kairo-Discord-Bot
 
-Kairo is a TypeScript Discord music and entertainment platform under reconstruction. The workspace separates the Discord application from a reusable `@kairo/music-engine` API. Phase 0 provides tooling and startup infrastructure; music playback and commands are not yet implemented.
+Kairo is a TypeScript Discord music and entertainment platform under reconstruction. The workspace separates the Discord application from a reusable `@kairo/music-engine` API. Phase 0 provides tooling and startup infrastructure. An early Phase 1 parser handles offline fixture tracks; music playback and commands are not yet implemented.
 
 ## Development
 

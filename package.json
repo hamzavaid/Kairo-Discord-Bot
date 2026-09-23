@@ -16,6 +16,7 @@
     "build": "pnpm -r --if-present build"
   },
   "devDependencies": {
+    "@kairo/music-engine": "workspace:*",
     "@kairo/shared": "workspace:*",
     "@eslint/js": "^9.39.5",
     "@types/node": "^24.0.0",
