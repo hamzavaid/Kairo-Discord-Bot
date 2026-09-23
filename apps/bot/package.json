@@ -1,0 +1,14 @@
+{
+  "name": "@kairo/bot",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@kairo/music-engine": "workspace:*",
+    "@kairo/shared": "workspace:*",
+    "discord.js": "^14.0.0"
+  }
+}

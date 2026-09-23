@@ -1,0 +1,5 @@
+legacy/
+docs/Kairo_Technical_Specification.docx
+pnpm-lock.yaml
+dist/
+node_modules/
