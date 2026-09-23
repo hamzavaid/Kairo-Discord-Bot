@@ -1,0 +1,10 @@
+Member in Members[Sun, Ario]:
+  Member{}: { ID: Snowflake, UserMod: Object }
+  Member has UserMod{}: { ID: Snowflake, Current: Boolean, Info: Null || Modmail, History: Array<Object> }
+  if Current:
+    UserMod has Modmail{}: { ID: UserMod.ID, channel: TextChannel, Idle: Time, CreatedAt: Time }
+  else:
+    UserMod has Modmail: Null
+
+ModmailSys{}: { Used: Number, Current: Number, History: Array<Object>, Methods: Array<Function>  }
+  ModmailSys has Methods(): (Create)

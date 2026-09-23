@@ -1,0 +1,30 @@
+{
+  "name": "music-bot-v13",
+  "version": "1.0.0",
+  "description": "\\",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@discordjs/builders": "^0.6.0",
+    "@discordjs/opus": "^0.5.3",
+    "@discordjs/rest": "^0.1.0-canary.0",
+    "@discordjs/voice": "^0.6.0",
+    "discord-api-types": "^0.23.1",
+    "discord-player": "^5.1.0",
+    "discord-ytdl-core": "^5.0.4",
+    "discord.js": "^13.1.0",
+    "dotenv": "^10.0.0",
+    "ffmpeg-static": "^4.4.0",
+    "libsodium-wrappers": "^0.7.9",
+    "mongoose": "^6.0.7",
+    "node-fetch": "^2.6.1",
+    "simple-spotify": "^1.0.4",
+    "youtube-dl-exec": "^1.2.14",
+    "youtube-sr": "^4.1.9",
+    "ytdl-core": "^4.9.1"
+  }
+}

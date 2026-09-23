@@ -1,0 +1,50 @@
+Members : [Sun, Ario, Ran, Kun];
+
+Member in Members:
+	Member: Library{ Owner: Snowflake, Owned Playlist: [], Liked Playlists: [], Liked Songs: [] }
+	Member "Library Commands": [ Lib-info?, Lib-menu ]
+
+	Playlist in Library{ Owned Playlist }:
+		Playlist: { Name: String, Id: Snowflake, Owner: Snowflake, Songs: [], Public: Boolean, Thumbnail: URL, Desc: String, Likes: Number }
+		Member's "Playlist Commands": [ Pl-create?, Pl-delete?, Pl-add?, Pl-remove?, Pl-edit?, Pl-play, Pl-info? ]
+
+	LPlaylist in Library{ Liked Playlists }:
+		LPlaylist: [ Id: (Playlist Id: Snowflake) ] || Read Only
+		Member's "LPlaylist Commands": [ nPl-like || nPl-save, nPl-listen ]
+
+	Song in Library{ Liked Songs }:
+		Song: Track{}
+		Member's "Song Commands": [ So-save || So-like, So-play ]
+
+Add Button to Indiv-Playlist to see all Songs
+Add Button to Indiv-Liked-Playlist to see all Songs
+
+UNO: 
+  Player 1 Starts - (*uno):
+    Deck Created
+    Player 1 Hand Created
+    Wait for Player 2
+  Player 2 Joins - (Embed Button):
+    Player 2 Hand Created
+    Wait 10 Seconds
+  First Card Showed:
+    Rotate Player 1 and Player 2
+  Player 3 Joins - (Embed Button):
+    Player 3 Waits
+    Game Over
+    All Players Vote
+  Game Starts:
+    Restart from Step 3: (First Card):
+    Rotate All Players
+
+
+
+
+
+
+/------
+|     |
+|     |
+      |
+      |
+   -------
