@@ -7,6 +7,7 @@ describe('bot music adapter', () => {
     const parse = vi.fn().mockResolvedValue({ kind: 'search', candidates: [] });
     const engine = {
       parse,
+      matchCandidates: vi.fn(),
       on: vi.fn(),
       shutdown: vi.fn(),
     } satisfies KairoMusicEngine;

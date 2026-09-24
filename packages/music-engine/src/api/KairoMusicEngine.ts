@@ -18,6 +18,13 @@ import { YoutubeSrProvider } from '../providers/metadata/YoutubeSrProvider.js';
 import { YouTubeApiProvider } from '../providers/metadata/YouTubeApiProvider.js';
 import { SpotifyProvider } from '../providers/metadata/SpotifyProvider.js';
 import { MetadataProviderManager } from '../providers/MetadataProviderManager.js';
+import { CandidateMatcher } from '../matching/CandidateMatcher.js';
+import type {
+  MatchRequest,
+  MatchResult,
+  MatchWeights,
+  MatcherLogger,
+} from '../matching/types.js';
 
 export interface EngineOptions {
   fixtureTracks?: FixtureTrack[];
@@ -28,10 +35,16 @@ export interface EngineOptions {
   youtubeSr?: YoutubeSrOptions;
   youtubeApi?: YouTubeApiOptions;
   spotify?: SpotifyOptions;
+  matchThreshold?: number;
+  matcherWeights?: Partial<MatchWeights>;
+  providerQuality?: Readonly<Record<string, number>>;
+  artistAliases?: Readonly<Record<string, string>>;
+  matcherLogger?: MatcherLogger;
 }
 
 export interface KairoMusicEngine {
   parse(request: ParseRequest): Promise<ParseResult>;
+  matchCandidates(request: MatchRequest): MatchResult;
   on<T extends KairoMusicEvent['type']>(
     type: T,
     listener: (event: Extract<KairoMusicEvent, { type: T }>) => void,
@@ -80,6 +93,23 @@ export function createKairoMusicEngine(
     options.fallbackProviders ?? [],
     Boolean(options.fixtureTracks && !options.metadataProvider),
   );
+  const matcher = new CandidateMatcher({
+    ...(options.matchThreshold === undefined
+      ? {}
+      : { threshold: options.matchThreshold }),
+    ...(options.matcherWeights === undefined
+      ? {}
+      : { weights: options.matcherWeights }),
+    ...(options.providerQuality === undefined
+      ? {}
+      : { providerQuality: options.providerQuality }),
+    ...(options.artistAliases === undefined
+      ? {}
+      : { artistAliases: options.artistAliases }),
+    ...(options.matcherLogger === undefined
+      ? {}
+      : { logger: options.matcherLogger }),
+  });
   const listeners = new Map<
     KairoMusicEvent['type'],
     Set<(event: KairoMusicEvent) => void>
@@ -96,6 +126,9 @@ export function createKairoMusicEngine(
   }
 
   return {
+    matchCandidates(request) {
+      return matcher.match(request);
+    },
     async parse(request) {
       const eventContext = {
         guildId: request.guildId,

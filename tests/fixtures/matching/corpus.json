@@ -1,0 +1,95 @@
+{
+  "source": {
+    "title": "One More Time",
+    "artists": [{ "name": "Daft Punk" }],
+    "durationMs": 320000,
+    "album": { "title": "Discovery" }
+  },
+  "positive": [
+    {
+      "name": "exact",
+      "title": "One More Time",
+      "artists": [{ "name": "Daft Punk" }],
+      "durationMs": 320000
+    },
+    {
+      "name": "punctuation",
+      "title": "One, More Time!",
+      "artists": [{ "name": "DAFT PUNK" }],
+      "durationMs": 320000
+    },
+    {
+      "name": "official video",
+      "title": "One More Time (Official Video)",
+      "artists": [{ "name": "Daft Punk" }],
+      "durationMs": 320000
+    },
+    {
+      "name": "official audio",
+      "title": "One More Time [Official Audio] HD",
+      "artists": [{ "name": "Daft Punk" }],
+      "durationMs": 319000
+    },
+    {
+      "name": "minor duration",
+      "title": "One More Time",
+      "artists": [{ "name": "Daft Punk" }],
+      "durationMs": 326000
+    },
+    {
+      "name": "missing duration",
+      "title": "One More Time",
+      "artists": [{ "name": "Daft Punk" }]
+    }
+  ],
+  "negative": [
+    {
+      "name": "wrong artist",
+      "title": "One More Time",
+      "artists": [{ "name": "Unknown Uploader" }],
+      "durationMs": 320000
+    },
+    {
+      "name": "live",
+      "title": "One More Time (Live)",
+      "artists": [{ "name": "Daft Punk" }],
+      "durationMs": 320000
+    },
+    {
+      "name": "remix",
+      "title": "One More Time (Club Remix)",
+      "artists": [{ "name": "Daft Punk" }],
+      "durationMs": 320000
+    },
+    {
+      "name": "cover",
+      "title": "One More Time (Cover)",
+      "artists": [{ "name": "Daft Punk" }],
+      "durationMs": 320000
+    },
+    {
+      "name": "acoustic",
+      "title": "One More Time Acoustic",
+      "artists": [{ "name": "Daft Punk" }],
+      "durationMs": 320000
+    },
+    {
+      "name": "sped up",
+      "title": "One More Time (Sped Up)",
+      "artists": [{ "name": "Daft Punk" }],
+      "durationMs": 320000
+    },
+    {
+      "name": "slowed",
+      "title": "One More Time Slowed",
+      "artists": [{ "name": "Daft Punk" }],
+      "durationMs": 320000
+    },
+    {
+      "name": "duration outlier",
+      "title": "One More Time",
+      "artists": [{ "name": "Daft Punk" }],
+      "durationMs": 600000
+    }
+  ]
+}

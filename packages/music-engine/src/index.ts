@@ -3,7 +3,17 @@ export {
   type KairoMusicEngine,
   type EngineOptions,
 } from './api/KairoMusicEngine.js';
-export { MusicError, type MusicErrorCode } from './api/errors.js';
+export {
+  MusicError,
+  NoReliableMatchError,
+  type MusicErrorCode,
+} from './api/errors.js';
+export type {
+  MatchRequest,
+  MatchResult,
+  MatchSignals,
+  MatchWeights,
+} from './matching/types.js';
 export type { MusicBrainzOptions } from './api/MusicBrainzOptions.js';
 export type {
   MetadataProviderId,

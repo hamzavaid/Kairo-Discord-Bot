@@ -13,6 +13,16 @@ export interface TrackProvenance {
   parsedBy: string;
   matchedFrom?: string;
   confidence?: number;
+  originalSourceProvider?: string;
+  selectedProviderId?: string;
+  matchSignals?: {
+    titleSimilarity: number;
+    artistSimilarity: number;
+    durationSimilarity: number;
+    albumSimilarity: number;
+    providerQuality: number;
+    versionCompatibility: number;
+  };
 }
 
 export interface Track {
