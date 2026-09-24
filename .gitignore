@@ -142,4 +142,7 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
 
-# Internal documentation is versioned with the implementation.
+# Internal specifications and working notes stay local.
+/docs/**
+!/docs/public/
+!/docs/public/**

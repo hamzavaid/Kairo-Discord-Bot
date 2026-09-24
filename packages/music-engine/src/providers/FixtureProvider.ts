@@ -1,32 +1,36 @@
 import { MusicError } from '../api/errors.js';
 import type { FixtureTrack } from '../api/requests.js';
-import type { Track } from '../domain/Track.js';
+import type { ClassifiedInput } from '../parser/QueryClassifier.js';
+import type { MediaProvider, ProviderTrack } from './MediaProvider.js';
 
-export class FixtureProvider {
+/** Offline metadata provider used by tests and development only. */
+export class FixtureProvider implements MediaProvider {
+  readonly id = 'fixture';
+  readonly capabilities = { search: true, trackUrl: true };
   private readonly tracks: Map<string, FixtureTrack>;
 
   constructor(tracks: FixtureTrack[]) {
     this.tracks = new Map(tracks.map((track) => [track.id, track]));
   }
 
-  get(
-    id: string,
-    input: string,
-    requestedBy: string,
-    canonicalUrl?: string,
-  ): Track {
-    const fixture = this.tracks.get(id);
-    if (!fixture)
-      throw new MusicError('NO_SEARCH_RESULTS', 'No matching song was found.');
-    return this.toTrack(fixture, input, requestedBy, 'fixture', canonicalUrl);
+  canParse(input: ClassifiedInput): boolean {
+    return input.kind === 'provider-track' && input.providerId === this.id;
   }
 
-  search(
-    query: string,
-    input: string,
-    requestedBy: string,
-    maxResults: number,
-  ): Track[] {
+  async parse(input: ClassifiedInput): Promise<ProviderTrack> {
+    if (input.kind !== 'provider-track' || !this.canParse(input)) {
+      throw new MusicError(
+        'UNSUPPORTED_PROVIDER',
+        'This music source is not supported.',
+      );
+    }
+    const fixture = this.tracks.get(input.sourceId);
+    if (!fixture)
+      throw new MusicError('NO_SEARCH_RESULTS', 'No matching song was found.');
+    return this.toProviderTrack(fixture);
+  }
+
+  async search(query: string, maxResults: number): Promise<ProviderTrack[]> {
     const terms = query.toLocaleLowerCase('en').split(' ');
     return [...this.tracks.values()]
       .filter((fixture) => {
@@ -37,30 +41,17 @@ export class FixtureProvider {
         return terms.every((term) => haystack.includes(term));
       })
       .slice(0, maxResults)
-      .map((fixture) => this.toTrack(fixture, input, requestedBy, 'search'));
+      .map((fixture) => this.toProviderTrack(fixture));
   }
 
-  private toTrack(
-    fixture: FixtureTrack,
-    input: string,
-    requestedBy: string,
-    parsedBy: 'fixture' | 'search',
-    canonicalUrl?: string,
-  ): Track {
+  private toProviderTrack(fixture: FixtureTrack): ProviderTrack {
     return {
-      id: `fixture:${fixture.id}`,
+      sourceId: fixture.id,
       title: fixture.title,
-      artists: fixture.artists.map((artist) => ({ name: artist.name })),
+      artists: fixture.artists,
       ...(fixture.durationMs === undefined
         ? {}
         : { durationMs: fixture.durationMs }),
-      ...(canonicalUrl === undefined ? {} : { canonicalUrl }),
-      sourceProvider: 'fixture',
-      sourceId: fixture.id,
-      isLive: false,
-      requestedBy,
-      provenance: { input, parsedBy },
-      createdAt: new Date(),
     };
   }
 }

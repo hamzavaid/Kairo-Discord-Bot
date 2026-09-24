@@ -2,7 +2,12 @@ import { MusicError } from '../api/errors.js';
 
 export type ClassifiedInput =
   | { kind: 'search'; query: string }
-  | { kind: 'fixture-track'; id: string; canonicalUrl: string };
+  | {
+      kind: 'provider-track';
+      providerId: string;
+      sourceId: string;
+      canonicalUrl: string;
+    };
 
 export function classifyQuery(query: string): ClassifiedInput {
   if (/^[a-z][a-z\d+.-]*:\/\//iu.test(query) && !/^https?:\/\//iu.test(query)) {
@@ -38,8 +43,9 @@ export function classifyQuery(query: string): ClassifiedInput {
     throw new MusicError('INVALID_QUERY', 'Enter a valid fixture track URL.');
   }
   return {
-    kind: 'fixture-track',
-    id: match[1],
+    kind: 'provider-track',
+    providerId: 'fixture',
+    sourceId: match[1],
     canonicalUrl: `${url.origin}${url.pathname}`,
   };
 }

@@ -1,4 +1,5 @@
 import type { Track } from '../domain/Track.js';
+import type { TrackCollection } from '../domain/TrackCollection.js';
 
 /** Offline catalog input for the development fixture provider. */
 export interface FixtureTrack {
@@ -16,13 +17,11 @@ export interface ParseRequest {
   maxResults?: number;
   allowCollections?: boolean;
   preferredProvider?: string;
+  requestId?: string;
 }
 
 export type ParseResult =
   | { kind: 'track'; track: Track }
-  | {
-      kind: 'collection';
-      collection: { id: string; title: string; tracks: Track[] };
-    }
+  | { kind: 'collection'; collection: TrackCollection }
   | { kind: 'search'; candidates: Track[] }
   | { kind: 'unsupported'; reason: string };

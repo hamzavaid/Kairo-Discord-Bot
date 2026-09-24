@@ -10,7 +10,7 @@ export interface AlbumRef {
 
 export interface TrackProvenance {
   input: string;
-  parsedBy: string | 'search';
+  parsedBy: string;
   matchedFrom?: string;
   confidence?: number;
 }
