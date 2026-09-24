@@ -17,3 +17,9 @@
 - The engine does not yet implement the full Phase 1 provider registry, general adapters, collections, or events. This stage is intentionally narrower than the Phase 1 exit criterion.
 - Vitest resolves workspace source directly so CI can test before building packages.
 - Stage gates passed: Prettier check, ESLint, strict TypeScript type check, 8 Vitest tests, and all package builds.
+
+## Discord dependency refresh
+
+- Verified the npm `latest` dist-tag for `discord.js` is 14.27.0. The lockfile already resolved 14.27.0; updated the bot manifest from `^14.0.0` to `^14.27.0` so the declared range reflects the current baseline.
+- The local ready-event edit now uses `Events.ClientReady` and `Events.Error`; it removes the deprecated `ready` event used by the previous build.
+- Prettier, ESLint, strict type check, 8 Vitest tests, and all builds pass. A live Discord login smoke test reached `Kairo ready` without the earlier deprecation warning; the process was stopped afterward.

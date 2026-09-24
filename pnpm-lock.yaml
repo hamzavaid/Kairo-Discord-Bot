@@ -45,7 +45,7 @@ importers:
         specifier: workspace:*
         version: link:../../packages/shared
       discord.js:
-        specifier: ^14.0.0
+        specifier: ^14.27.0
         version: 14.27.0
 
   packages/data: {}
