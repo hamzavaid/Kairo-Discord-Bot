@@ -6,12 +6,18 @@ const providerTrackSchema = z.object({
   sourceId: z.string().min(1).max(200),
   title: z.string().trim().min(1).max(500),
   artists: z
-    .array(z.object({ name: z.string().trim().min(1).max(200) }))
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(200),
+        id: z.string().optional(),
+      }),
+    )
     .min(1),
   durationMs: z.number().int().positive().optional(),
   isLive: z.boolean().optional(),
   explicit: z.boolean().optional(),
   artworkUrl: z.string().url().optional(),
+  canonicalUrl: z.string().url().optional(),
 });
 
 export interface NormalizeContext {
@@ -34,15 +40,17 @@ export function normalizeProviderTrack(
     );
   }
   const track = result.data;
+  const canonicalUrl = context.canonicalUrl ?? track.canonicalUrl;
   return {
     id: `${context.providerId}:${track.sourceId}`,
     title: track.title,
-    artists: track.artists,
+    artists: track.artists.map((artist) => ({
+      name: artist.name,
+      ...(artist.id === undefined ? {} : { id: artist.id }),
+    })),
     ...(track.durationMs === undefined ? {} : { durationMs: track.durationMs }),
     ...(track.artworkUrl === undefined ? {} : { artworkUrl: track.artworkUrl }),
-    ...(context.canonicalUrl === undefined
-      ? {}
-      : { canonicalUrl: context.canonicalUrl }),
+    ...(canonicalUrl === undefined ? {} : { canonicalUrl }),
     sourceProvider: context.providerId,
     sourceId: track.sourceId,
     isLive: track.isLive ?? false,

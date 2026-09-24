@@ -2,7 +2,10 @@ export type MusicErrorCode =
   | 'INVALID_QUERY'
   | 'UNSUPPORTED_PROVIDER'
   | 'NO_SEARCH_RESULTS'
-  | 'PROVIDER_PARSE_ERROR';
+  | 'PROVIDER_PARSE_ERROR'
+  | 'PROVIDER_TIMEOUT'
+  | 'PROVIDER_UNAVAILABLE'
+  | 'PARSER_CANCELLED';
 
 export class MusicError extends Error {
   constructor(

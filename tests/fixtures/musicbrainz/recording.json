@@ -1,0 +1,21 @@
+{
+  "id": "b9ad642e-b012-41c7-b72a-42cf4911f9ff",
+  "title": "LAST ANGEL",
+  "length": 230000,
+  "artist-credit": [
+    {
+      "name": "Koda Kumi",
+      "artist": {
+        "id": "455641ea-fff4-49f6-8fb4-49f961d8f1ac",
+        "name": "Koda Kumi"
+      }
+    },
+    {
+      "name": "Tohoshinki",
+      "artist": {
+        "id": "05cbaf37-6dc2-4f71-a0ce-d633447d90c3",
+        "name": "Tohoshinki"
+      }
+    }
+  ]
+}

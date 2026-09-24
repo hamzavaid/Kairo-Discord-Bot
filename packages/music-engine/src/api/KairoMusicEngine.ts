@@ -1,15 +1,18 @@
 import { MusicError } from './errors.js';
 import type { KairoMusicEvent, Unsubscribe } from './events.js';
 import type { FixtureTrack, ParseRequest, ParseResult } from './requests.js';
+import type { MusicBrainzOptions } from './MusicBrainzOptions.js';
 import { classifyQuery } from '../parser/QueryClassifier.js';
 import { normalizeQuery } from '../parser/QueryNormalizer.js';
 import { normalizeProviderTrack } from '../parser/TrackNormalizer.js';
 import { FixtureProvider } from '../providers/FixtureProvider.js';
 import { ProviderRegistry } from '../providers/ProviderRegistry.js';
+import { MusicBrainzProvider } from '../providers/musicbrainz/MusicBrainzProvider.js';
 
 export interface EngineOptions {
   fixtureTracks?: FixtureTrack[];
   providerPriority?: string[];
+  musicBrainz?: MusicBrainzOptions;
 }
 
 export interface KairoMusicEngine {
@@ -26,6 +29,8 @@ export function createKairoMusicEngine(
 ): KairoMusicEngine {
   const registry = new ProviderRegistry(options.providerPriority);
   registry.register(new FixtureProvider(options.fixtureTracks ?? []));
+  if (options.musicBrainz)
+    registry.register(new MusicBrainzProvider(options.musicBrainz));
   const listeners = new Map<
     KairoMusicEvent['type'],
     Set<(event: KairoMusicEvent) => void>
@@ -51,6 +56,12 @@ export function createKairoMusicEngine(
           : { requestId: request.requestId }),
       };
       try {
+        if (request.signal?.aborted) {
+          throw new MusicError(
+            'PARSER_CANCELLED',
+            'The music request was cancelled.',
+          );
+        }
         if (!request.guildId || !request.requestedBy) {
           throw new MusicError(
             'INVALID_QUERY',
@@ -72,7 +83,7 @@ export function createKairoMusicEngine(
         let result: ParseResult;
         if (classified.kind === 'provider-track') {
           const provider = registry.providerFor(classified);
-          const payload = await provider.parse(classified);
+          const payload = await provider.parse(classified, request.signal);
           result = {
             kind: 'track',
             track: normalizeProviderTrack(payload, {
@@ -85,11 +96,15 @@ export function createKairoMusicEngine(
           };
         } else {
           const candidates = [];
-          for (const provider of registry.searchableProviders()) {
+          const providers = request.preferredProvider
+            ? [registry.getMetadataProvider(request.preferredProvider)]
+            : registry.searchableProviders();
+          for (const provider of providers) {
             if (!provider.search) continue;
             const payloads = await provider.search(
               classified.query,
               maxResults - candidates.length,
+              request.signal,
             );
             for (const payload of payloads) {
               candidates.push(

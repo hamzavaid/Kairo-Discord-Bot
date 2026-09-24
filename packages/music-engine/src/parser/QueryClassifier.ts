@@ -23,13 +23,31 @@ export function classifyQuery(query: string): ClassifiedInput {
   } catch {
     throw new MusicError('INVALID_QUERY', 'Enter a valid song URL.');
   }
-  if (
-    url.protocol !== 'https:' ||
-    url.hostname !== 'fixture.kairo.invalid' ||
-    url.username ||
-    url.password ||
-    url.port
-  ) {
+  if (url.protocol !== 'https:' || url.username || url.password || url.port) {
+    throw new MusicError(
+      'UNSUPPORTED_PROVIDER',
+      'This music source is not supported.',
+    );
+  }
+  if (url.hostname === 'musicbrainz.org') {
+    const match =
+      /^\/recording\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/?$/iu.exec(
+        url.pathname,
+      );
+    if (!match?.[1])
+      throw new MusicError(
+        'INVALID_QUERY',
+        'Enter a valid MusicBrainz recording URL.',
+      );
+    const sourceId = match[1].toLowerCase();
+    return {
+      kind: 'provider-track',
+      providerId: 'musicbrainz',
+      sourceId,
+      canonicalUrl: `https://musicbrainz.org/recording/${sourceId}`,
+    };
+  }
+  if (url.hostname !== 'fixture.kairo.invalid') {
     throw new MusicError(
       'UNSUPPORTED_PROVIDER',
       'This music source is not supported.',

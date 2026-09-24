@@ -4,6 +4,7 @@ export {
   type EngineOptions,
 } from './api/KairoMusicEngine.js';
 export { MusicError, type MusicErrorCode } from './api/errors.js';
+export type { MusicBrainzOptions } from './api/MusicBrainzOptions.js';
 export type { KairoMusicEvent, Unsubscribe } from './api/events.js';
 export type {
   FixtureTrack,

@@ -18,6 +18,7 @@ export interface ParseRequest {
   allowCollections?: boolean;
   preferredProvider?: string;
   requestId?: string;
+  signal?: AbortSignal;
 }
 
 export type ParseResult =

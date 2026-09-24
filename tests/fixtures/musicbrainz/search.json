@@ -1,0 +1,36 @@
+{
+  "count": 2,
+  "offset": 0,
+  "recordings": [
+    {
+      "id": "b9ad642e-b012-41c7-b72a-42cf4911f9ff",
+      "title": "LAST ANGEL",
+      "length": 230000,
+      "score": 100,
+      "artist-credit": [
+        {
+          "name": "Koda Kumi",
+          "artist": {
+            "id": "455641ea-fff4-49f6-8fb4-49f961d8f1ac",
+            "name": "Koda Kumi"
+          }
+        }
+      ]
+    },
+    {
+      "id": "026fa041-3917-4c73-9079-ed16e36f20f8",
+      "title": "LAST ANGEL (live)",
+      "length": 231000,
+      "score": 90,
+      "artist-credit": [
+        {
+          "name": "Koda Kumi",
+          "artist": {
+            "id": "455641ea-fff4-49f6-8fb4-49f961d8f1ac",
+            "name": "Koda Kumi"
+          }
+        }
+      ]
+    }
+  ]
+}
