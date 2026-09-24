@@ -5,6 +5,9 @@ export interface MusicBrainzOptions {
   timeoutMs?: number;
   searchCacheMs?: number;
   metadataCacheMs?: number;
+  /** Optional request limits, primarily useful with injected transports. */
+  minIntervalMs?: number;
+  maxAttempts?: number;
   /** Transport injection for deterministic tests or controlled runtimes. */
   fetcher?: (url: string, init: RequestInit) => Promise<Response>;
   /** Receives bounded diagnostics without raw queries or response bodies. */

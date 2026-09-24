@@ -9,6 +9,7 @@ export interface ProviderTrack {
   explicit?: boolean;
   artworkUrl?: string;
   canonicalUrl?: string;
+  album?: { title: string; id?: string };
 }
 
 export interface MediaProvider {

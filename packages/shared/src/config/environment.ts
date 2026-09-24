@@ -24,6 +24,10 @@ const environmentSchema = z.object({
   PARSER_METADATA_CACHE_SECONDS: positiveInt(21600),
   FFMPEG_PATH: z.string().min(1).default('ffmpeg'),
   FFPROBE_PATH: z.string().min(1).default('ffprobe'),
+  YOUTUBE_API_KEY: z.string().optional(),
+  SPOTIFY_CLIENT_ID: z.string().optional(),
+  SPOTIFY_CLIENT_SECRET: z.string().optional(),
+  MUSICBRAINZ_USER_AGENT: z.string().optional(),
 });
 
 export type Environment = z.infer<typeof environmentSchema>;

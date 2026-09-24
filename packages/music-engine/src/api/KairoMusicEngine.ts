@@ -2,17 +2,32 @@ import { MusicError } from './errors.js';
 import type { KairoMusicEvent, Unsubscribe } from './events.js';
 import type { FixtureTrack, ParseRequest, ParseResult } from './requests.js';
 import type { MusicBrainzOptions } from './MusicBrainzOptions.js';
+import type {
+  MetadataProviderId,
+  YoutubeSrOptions,
+  YouTubeApiOptions,
+  SpotifyOptions,
+} from './MetadataOptions.js';
 import { classifyQuery } from '../parser/QueryClassifier.js';
 import { normalizeQuery } from '../parser/QueryNormalizer.js';
 import { normalizeProviderTrack } from '../parser/TrackNormalizer.js';
 import { FixtureProvider } from '../providers/FixtureProvider.js';
 import { ProviderRegistry } from '../providers/ProviderRegistry.js';
 import { MusicBrainzProvider } from '../providers/musicbrainz/MusicBrainzProvider.js';
+import { YoutubeSrProvider } from '../providers/metadata/YoutubeSrProvider.js';
+import { YouTubeApiProvider } from '../providers/metadata/YouTubeApiProvider.js';
+import { SpotifyProvider } from '../providers/metadata/SpotifyProvider.js';
+import { MetadataProviderManager } from '../providers/MetadataProviderManager.js';
 
 export interface EngineOptions {
   fixtureTracks?: FixtureTrack[];
   providerPriority?: string[];
   musicBrainz?: MusicBrainzOptions;
+  metadataProvider?: MetadataProviderId;
+  fallbackProviders?: MetadataProviderId[];
+  youtubeSr?: YoutubeSrOptions;
+  youtubeApi?: YouTubeApiOptions;
+  spotify?: SpotifyOptions;
 }
 
 export interface KairoMusicEngine {
@@ -29,8 +44,42 @@ export function createKairoMusicEngine(
 ): KairoMusicEngine {
   const registry = new ProviderRegistry(options.providerPriority);
   registry.register(new FixtureProvider(options.fixtureTracks ?? []));
-  if (options.musicBrainz)
+  const selected = options.metadataProvider ?? 'youtube-sr';
+  const required = new Set([selected, ...(options.fallbackProviders ?? [])]);
+  registry.register(new YoutubeSrProvider(options.youtubeSr));
+  if (options.youtubeApi || required.has('youtube-api')) {
+    if (!options.youtubeApi?.apiKey?.trim())
+      throw new MusicError(
+        'PROVIDER_CONFIGURATION_ERROR',
+        'YOUTUBE_API_KEY is required for youtube-api.',
+      );
+    registry.register(new YouTubeApiProvider(options.youtubeApi));
+  }
+  if (options.spotify || required.has('spotify')) {
+    if (
+      !options.spotify?.clientId?.trim() ||
+      !options.spotify?.clientSecret?.trim()
+    )
+      throw new MusicError(
+        'PROVIDER_CONFIGURATION_ERROR',
+        'SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET are required for spotify.',
+      );
+    registry.register(new SpotifyProvider(options.spotify));
+  }
+  if (options.musicBrainz || required.has('musicbrainz')) {
+    if (!options.musicBrainz?.contact?.trim())
+      throw new MusicError(
+        'PROVIDER_CONFIGURATION_ERROR',
+        'MUSICBRAINZ_USER_AGENT contact is required for musicbrainz.',
+      );
     registry.register(new MusicBrainzProvider(options.musicBrainz));
+  }
+  const manager = new MetadataProviderManager(
+    registry,
+    selected,
+    options.fallbackProviders ?? [],
+    Boolean(options.fixtureTracks && !options.metadataProvider),
+  );
   const listeners = new Map<
     KairoMusicEvent['type'],
     Set<(event: KairoMusicEvent) => void>
@@ -82,8 +131,10 @@ export function createKairoMusicEngine(
         const classified = classifyQuery(normalizeQuery(request.input));
         let result: ParseResult;
         if (classified.kind === 'provider-track') {
-          const provider = registry.providerFor(classified);
-          const payload = await provider.parse(classified, request.signal);
+          const { provider, value: payload } = await manager.lookup(
+            classified,
+            request.signal,
+          );
           result = {
             kind: 'track',
             track: normalizeProviderTrack(payload, {
@@ -95,36 +146,20 @@ export function createKairoMusicEngine(
             }),
           };
         } else {
-          const candidates = [];
-          const providers = request.preferredProvider
-            ? [registry.getMetadataProvider(request.preferredProvider)]
-            : registry.searchableProviders();
-          for (const provider of providers) {
-            if (!provider.search) continue;
-            const payloads = await provider.search(
-              classified.query,
-              maxResults - candidates.length,
-              request.signal,
-            );
-            for (const payload of payloads) {
-              candidates.push(
-                normalizeProviderTrack(payload, {
-                  providerId: provider.id,
-                  input: request.input,
-                  requestedBy: request.requestedBy,
-                  parsedBy: 'search',
-                }),
-              );
-              if (candidates.length === maxResults) break;
-            }
-            if (candidates.length === maxResults) break;
-          }
-          if (candidates.length === 0) {
-            throw new MusicError(
-              'NO_SEARCH_RESULTS',
-              'No matching song was found.',
-            );
-          }
+          const { provider, value: payloads } = await manager.search(
+            classified.query,
+            maxResults,
+            request.preferredProvider,
+            request.signal,
+          );
+          const candidates = payloads.slice(0, maxResults).map((payload) =>
+            normalizeProviderTrack(payload, {
+              providerId: provider.id,
+              input: request.input,
+              requestedBy: request.requestedBy,
+              parsedBy: 'search',
+            }),
+          );
           result = { kind: 'search', candidates };
         }
         emit({

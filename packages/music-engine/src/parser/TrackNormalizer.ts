@@ -18,6 +18,9 @@ const providerTrackSchema = z.object({
   explicit: z.boolean().optional(),
   artworkUrl: z.string().url().optional(),
   canonicalUrl: z.string().url().optional(),
+  album: z
+    .object({ title: z.string().min(1), id: z.string().optional() })
+    .optional(),
 });
 
 export interface NormalizeContext {
@@ -26,6 +29,15 @@ export interface NormalizeContext {
   requestedBy: string;
   parsedBy: string | 'search';
   canonicalUrl?: string;
+}
+
+export function validateProviderTrack(payload: unknown): void {
+  if (!providerTrackSchema.safeParse(payload).success) {
+    throw new MusicError(
+      'PROVIDER_PARSE_ERROR',
+      'The music source returned invalid metadata.',
+    );
+  }
 }
 
 export function normalizeProviderTrack(
@@ -56,6 +68,14 @@ export function normalizeProviderTrack(
     isLive: track.isLive ?? false,
     requestedBy: context.requestedBy,
     ...(track.explicit === undefined ? {} : { explicit: track.explicit }),
+    ...(track.album === undefined
+      ? {}
+      : {
+          album: {
+            title: track.album.title,
+            ...(track.album.id === undefined ? {} : { id: track.album.id }),
+          },
+        }),
     provenance: { input: context.input, parsedBy: context.parsedBy },
     createdAt: new Date(),
   };

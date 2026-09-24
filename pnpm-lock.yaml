@@ -54,6 +54,9 @@ importers:
 
   packages/music-engine:
     dependencies:
+      youtube-sr:
+        specifier: 4.3.12
+        version: 4.3.12
       zod:
         specifier: ^3.25.43
         version: 3.25.76
@@ -1177,6 +1180,9 @@ packages:
     resolution: {integrity: sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q==}
     engines: {node: '>=10'}
 
+  youtube-sr@4.3.12:
+    resolution: {integrity: sha512-pAuh5FjCJ6q062lMw6ajr6j9IHKMXk/AZsEo/5xLhJcoO1gN/M2kxwfAwi3d9QLHMPg2DMdBL1DsuWbAsfc5HA==}
+
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
@@ -2211,5 +2217,7 @@ snapshots:
   ws@8.21.3: {}
 
   yocto-queue@0.1.0: {}
+
+  youtube-sr@4.3.12: {}
 
   zod@3.25.76: {}

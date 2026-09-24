@@ -47,6 +47,37 @@ export function classifyQuery(query: string): ClassifiedInput {
       canonicalUrl: `https://musicbrainz.org/recording/${sourceId}`,
     };
   }
+  if (url.hostname === 'open.spotify.com') {
+    const match = /^\/track\/([A-Za-z0-9]{22})\/?$/u.exec(url.pathname);
+    if (!match?.[1])
+      throw new MusicError('INVALID_QUERY', 'Enter a valid Spotify track URL.');
+    return {
+      kind: 'provider-track',
+      providerId: 'spotify',
+      sourceId: match[1],
+      canonicalUrl: `https://open.spotify.com/track/${match[1]}`,
+    };
+  }
+  if (
+    ['www.youtube.com', 'youtube.com', 'm.youtube.com', 'youtu.be'].includes(
+      url.hostname,
+    )
+  ) {
+    const sourceId =
+      url.hostname === 'youtu.be'
+        ? url.pathname.slice(1)
+        : url.pathname === '/watch'
+          ? url.searchParams.get('v')
+          : undefined;
+    if (!sourceId || !/^[A-Za-z0-9_-]{11}$/u.test(sourceId))
+      throw new MusicError('INVALID_QUERY', 'Enter a valid YouTube video URL.');
+    return {
+      kind: 'provider-track',
+      providerId: 'youtube-sr',
+      sourceId,
+      canonicalUrl: `https://www.youtube.com/watch?v=${sourceId}`,
+    };
+  }
   if (url.hostname !== 'fixture.kairo.invalid') {
     throw new MusicError(
       'UNSUPPORTED_PROVIDER',
