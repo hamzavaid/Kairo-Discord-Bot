@@ -19,6 +19,11 @@ describe('bot music adapter', () => {
       shuffle: vi.fn(),
       setRepeat: vi.fn(),
       previous: vi.fn(),
+      connectVoice: vi.fn(),
+      disconnectVoice: vi.fn(),
+      getPlayback: vi.fn(),
+      pause: vi.fn(),
+      resume: vi.fn(),
       on: vi.fn(),
       shutdown: vi.fn(),
     } satisfies KairoMusicEngine;

@@ -1,6 +1,6 @@
 # Kairo-Discord-Bot
 
-Kairo is a TypeScript Discord music and entertainment platform under reconstruction. The workspace separates the Discord application from a reusable `@kairo/music-engine` API. The engine parses metadata through `youtube-sr` by default, or through a configured YouTube Data API, Spotify, or MusicBrainz adapter. Music playback and commands are not yet implemented.
+Kairo is a TypeScript Discord music and entertainment platform under reconstruction. The workspace separates the Discord application from a reusable `@kairo/music-engine` API. The engine parses metadata through `youtube-sr` by default, or through a configured YouTube Data API, Spotify, or MusicBrainz adapter. The engine now has per-guild queues and a fixture/local audio playback pipeline through `@discordjs/voice`. Discord music commands are not yet implemented.
 
 ## Development
 
@@ -49,3 +49,9 @@ const result = await engine.parse({
 ```
 
 The adapter uses MusicBrainz's documented JSON API and its rate limit guidance. It returns metadata only; no MusicBrainz audio stream is available through this adapter. See the [MusicBrainz API](https://musicbrainz.org/doc/MusicBrainz_API), [search documentation](https://musicbrainz.org/doc/MusicBrainz_API/Search), and [rate limits](https://musicbrainz.org/doc/MusicBrainz_API/Rate_Limiting).
+
+## Queue and fixture playback
+
+The public engine API supports enqueue, queue snapshots, skip, stop, clear, remove, move, shuffle, repeat, previous, voice connection, pause, resume, and playback snapshots. Queue and playback implementation types remain private to the engine. For development, `fixtureAudio` maps explicit fixture track IDs to Opus packets or a local file. Already compatible Opus streams bypass FFmpeg; other declared local inputs use a managed FFmpeg process. Set `ffmpegPath` when FFmpeg is outside `PATH`.
+
+There is no production audio provider yet. A metadata result from Spotify, YouTube, or MusicBrainz cannot be played until an approved stream provider is added in a later stage. The current bot bootstrap logs in but does not expose `/play` or other music commands.

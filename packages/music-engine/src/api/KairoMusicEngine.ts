@@ -20,6 +20,19 @@ import { SpotifyProvider } from '../providers/metadata/SpotifyProvider.js';
 import { MetadataProviderManager } from '../providers/MetadataProviderManager.js';
 import { CandidateMatcher } from '../matching/CandidateMatcher.js';
 import { QueueManager } from '../queue/QueueManager.js';
+import { QueueMutex } from '../queue/QueueMutex.js';
+import { VoiceManager } from '../playback/VoiceManager.js';
+import { PlaybackSession } from '../playback/PlaybackSession.js';
+import { StreamResolver } from '../stream/StreamResolver.js';
+import {
+  FixtureStreamProvider,
+  type FixtureAudio,
+} from '../stream/FixtureStreamProvider.js';
+import type {
+  VoiceTarget,
+  PlaybackSnapshot,
+  PlaybackRuntime,
+} from './playback.js';
 import type {
   EnqueueRequest,
   EnqueueManyRequest,
@@ -50,6 +63,11 @@ export interface EngineOptions {
   artistAliases?: Readonly<Record<string, string>>;
   matcherLogger?: MatcherLogger;
   maxQueueEntries?: number;
+  fixtureAudio?: Readonly<Record<string, FixtureAudio>>;
+  playbackRuntime?: PlaybackRuntime;
+  streamTimeoutMs?: number;
+  bufferTimeoutMs?: number;
+  ffmpegPath?: string;
 }
 
 export interface KairoMusicEngine {
@@ -66,6 +84,11 @@ export interface KairoMusicEngine {
   shuffle(guildId: string): Promise<QueueSnapshot>;
   setRepeat(guildId: string, mode: RepeatMode): Promise<QueueSnapshot>;
   previous(guildId: string): Promise<QueueSnapshot>;
+  connectVoice(target: VoiceTarget): Promise<PlaybackSnapshot>;
+  disconnectVoice(guildId: string): Promise<PlaybackSnapshot>;
+  getPlayback(guildId: string): PlaybackSnapshot;
+  pause(guildId: string): Promise<PlaybackSnapshot>;
+  resume(guildId: string): Promise<PlaybackSnapshot>;
   on<T extends KairoMusicEvent['type']>(
     type: T,
     listener: (event: Extract<KairoMusicEvent, { type: T }>) => void,
@@ -76,6 +99,13 @@ export interface KairoMusicEngine {
 export function createKairoMusicEngine(
   options: EngineOptions = {},
 ): KairoMusicEngine {
+  if (
+    options.bufferTimeoutMs !== undefined &&
+    (!Number.isFinite(options.bufferTimeoutMs) || options.bufferTimeoutMs < 1)
+  )
+    throw new MusicError('INVALID_QUERY', 'Buffer timeout must be positive.');
+  if (options.ffmpegPath !== undefined && !options.ffmpegPath.trim())
+    throw new MusicError('INVALID_QUERY', 'FFmpeg path is required.');
   const registry = new ProviderRegistry(options.providerPriority);
   registry.register(new FixtureProvider(options.fixtureTracks ?? []));
   const selected = options.metadataProvider ?? 'youtube-sr';
@@ -136,6 +166,28 @@ export function createKairoMusicEngine(
       ? {}
       : { maxEntries: options.maxQueueEntries },
   );
+  const voice = new VoiceManager({
+    ...(options.playbackRuntime?.joinVoiceChannel
+      ? { join: options.playbackRuntime.joinVoiceChannel }
+      : {}),
+    ...(options.playbackRuntime?.waitVoiceReady
+      ? { waitReady: options.playbackRuntime.waitVoiceReady }
+      : {}),
+    onDisconnect: (guildId) => {
+      void lock(guildId).runExclusive(async () => {
+        sessions.get(guildId)?.disconnect();
+        await queues.stop(guildId);
+      });
+    },
+  });
+  const resolver = new StreamResolver(
+    [new FixtureStreamProvider(options.fixtureAudio ?? {})],
+    options.streamTimeoutMs === undefined
+      ? {}
+      : { timeoutMs: options.streamTimeoutMs },
+  );
+  const sessions = new Map<string, PlaybackSession>();
+  const coordinator = new Map<string, QueueMutex>();
   const listeners = new Map<
     KairoMusicEvent['type'],
     Set<(event: KairoMusicEvent) => void>
@@ -151,33 +203,116 @@ export function createKairoMusicEngine(
     }
   }
 
-  return {
-    enqueue(request) {
-      return queues.enqueueMany(
-        request.guildId,
-        [request.track],
-        request.enqueuedBy,
+  function lock(guildId: string): QueueMutex {
+    let mutex = coordinator.get(guildId);
+    if (!mutex) {
+      mutex = new QueueMutex();
+      coordinator.set(guildId, mutex);
+    }
+    return mutex;
+  }
+
+  function session(guildId: string): PlaybackSession {
+    let current = sessions.get(guildId);
+    if (!current) {
+      current = new PlaybackSession({
+        guildId,
+        resolver,
+        ...(options.playbackRuntime?.createAudioPlayer
+          ? { player: options.playbackRuntime.createAudioPlayer() }
+          : {}),
+        ...(options.playbackRuntime?.createAudioResource
+          ? { createResource: options.playbackRuntime.createAudioResource }
+          : {}),
+        ...(options.bufferTimeoutMs === undefined
+          ? {}
+          : { bufferTimeoutMs: options.bufferTimeoutMs }),
+        ...(options.ffmpegPath === undefined
+          ? {}
+          : { ffmpegPath: options.ffmpegPath }),
+        onEnded: (generation, cause) => {
+          void handleEnded(guildId, generation, cause);
+        },
+        onStateChanged: (state, generation) =>
+          emit({ type: 'playbackStateChanged', guildId, state, generation }),
+        onFailure: (code, generation) =>
+          emit({
+            type: 'playbackFailed',
+            guildId,
+            code: code as MusicError['code'],
+            generation,
+          }),
+      });
+      sessions.set(guildId, current);
+    }
+    return current;
+  }
+
+  function sync(guildId: string, snapshot: QueueSnapshot): void {
+    const current = sessions.get(guildId);
+    if (!current || current.snapshot().state === 'DISCONNECTED') return;
+    if (snapshot.current) current.start(snapshot.current, snapshot.generation);
+    else current.stop();
+  }
+
+  async function handleEnded(
+    guildId: string,
+    generation: number,
+    cause: 'track-ended' | 'stream-failed',
+  ): Promise<void> {
+    await lock(guildId).runExclusive(async () => {
+      if (queues.snapshot(guildId).generation !== generation) return;
+      const snapshot = await queues.advance(
+        guildId,
+        generation,
+        cause === 'track-ended' ? 'track-ended' : 'skip',
       );
-    },
-    enqueueMany(request) {
-      return queues.enqueueMany(
+      sync(guildId, snapshot);
+    });
+  }
+
+  async function enqueueMany(
+    request: EnqueueManyRequest,
+  ): Promise<QueueSnapshot> {
+    return lock(request.guildId).runExclusive(async () => {
+      const snapshot = await queues.enqueueMany(
         request.guildId,
         request.tracks,
         request.enqueuedBy,
       );
+      sync(request.guildId, snapshot);
+      return snapshot;
+    });
+  }
+
+  return {
+    enqueue(request) {
+      return enqueueMany({
+        guildId: request.guildId,
+        tracks: [request.track],
+        enqueuedBy: request.enqueuedBy,
+      });
     },
+    enqueueMany,
     getQueue(guildId) {
       return queues.snapshot(guildId);
     },
     skip(guildId) {
-      return queues.advance(
-        guildId,
-        queues.snapshot(guildId).generation,
-        'skip',
-      );
+      const observed = queues.snapshot(guildId).generation;
+      return lock(guildId).runExclusive(async () => {
+        if (queues.snapshot(guildId).generation !== observed)
+          return queues.snapshot(guildId);
+        sessions.get(guildId)?.stop();
+        const snapshot = await queues.advance(guildId, observed, 'skip');
+        sync(guildId, snapshot);
+        return snapshot;
+      });
     },
     stop(guildId) {
-      return queues.stop(guildId);
+      return lock(guildId).runExclusive(async () => {
+        sessions.get(guildId)?.stop();
+        return queues.stop(guildId);
+      });
     },
     clear(guildId) {
       return queues.clear(guildId);
@@ -195,7 +330,69 @@ export function createKairoMusicEngine(
       return queues.setRepeat(guildId, mode);
     },
     previous(guildId) {
-      return queues.previous(guildId);
+      return lock(guildId).runExclusive(async () => {
+        sessions.get(guildId)?.stop();
+        const snapshot = await queues.previous(guildId);
+        sync(guildId, snapshot);
+        return snapshot;
+      });
+    },
+    connectVoice(target) {
+      return lock(target.guildId).runExclusive(async () => {
+        const connection = await voice.connect(target);
+        const active = session(target.guildId);
+        active.attach(connection);
+        sync(target.guildId, queues.snapshot(target.guildId));
+        return active.snapshot();
+      });
+    },
+    disconnectVoice(guildId) {
+      return lock(guildId).runExclusive(async () => {
+        const active = sessions.get(guildId);
+        active?.disconnect();
+        await queues.stop(guildId);
+        await voice.disconnect(guildId);
+        return (
+          active?.snapshot() ?? {
+            guildId,
+            state: 'DISCONNECTED',
+            current: undefined,
+            generation: 0,
+          }
+        );
+      });
+    },
+    getPlayback(guildId) {
+      return (
+        sessions.get(guildId)?.snapshot() ?? {
+          guildId,
+          state: 'DISCONNECTED',
+          current: undefined,
+          generation: 0,
+        }
+      );
+    },
+    pause(guildId) {
+      return lock(guildId).runExclusive(() => {
+        const active = sessions.get(guildId);
+        if (!active)
+          throw new MusicError(
+            'INVALID_PLAYBACK_TRANSITION',
+            'Playback is not playing.',
+          );
+        return active.pause();
+      });
+    },
+    resume(guildId) {
+      return lock(guildId).runExclusive(() => {
+        const active = sessions.get(guildId);
+        if (!active)
+          throw new MusicError(
+            'INVALID_PLAYBACK_TRANSITION',
+            'Playback is not paused.',
+          );
+        return active.resume();
+      });
     },
     matchCandidates(request) {
       return matcher.match(request);
@@ -300,6 +497,16 @@ export function createKairoMusicEngine(
       return () => bucket.delete(handler);
     },
     async shutdown() {
+      for (const guildId of [...sessions.keys()]) {
+        await lock(guildId).runExclusive(async () => {
+          sessions.get(guildId)?.disconnect();
+          await queues.stop(guildId);
+          await voice.disconnect(guildId);
+        });
+      }
+      await voice.shutdown();
+      sessions.clear();
+      coordinator.clear();
       queues.shutdown();
       listeners.clear();
     },

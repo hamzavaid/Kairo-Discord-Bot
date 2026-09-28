@@ -10,7 +10,13 @@ export type MusicErrorCode =
   | 'NO_RELIABLE_MATCH'
   | 'QUEUE_EMPTY'
   | 'QUEUE_LIMIT'
-  | 'INVALID_QUEUE_POSITION';
+  | 'INVALID_QUEUE_POSITION'
+  | 'INVALID_PLAYBACK_TRANSITION'
+  | 'STREAM_UNAVAILABLE'
+  | 'STREAM_CANCELLED'
+  | 'VOICE_JOIN_ERROR'
+  | 'STREAM_TIMEOUT'
+  | 'FFMPEG_ERROR';
 
 export class MusicError extends Error {
   constructor(

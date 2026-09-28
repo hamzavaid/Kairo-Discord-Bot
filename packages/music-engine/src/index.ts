@@ -31,6 +31,8 @@ export type {
   RemoveRequest,
   MoveRequest,
 } from './api/queue.js';
+export type { VoiceTarget, PlaybackSnapshot } from './api/playback.js';
+export type { FixtureAudio } from './stream/FixtureStreamProvider.js';
 export type {
   FixtureTrack,
   ParseRequest,

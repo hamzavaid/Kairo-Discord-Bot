@@ -16,9 +16,10 @@
     "build": "pnpm -r --if-present build"
   },
   "devDependencies": {
+    "@discordjs/voice": "0.19.2",
+    "@eslint/js": "^9.39.5",
     "@kairo/music-engine": "workspace:*",
     "@kairo/shared": "workspace:*",
-    "@eslint/js": "^9.39.5",
     "@types/node": "^24.0.0",
     "eslint": "^9.39.5",
     "prettier": "^3.6.2",
