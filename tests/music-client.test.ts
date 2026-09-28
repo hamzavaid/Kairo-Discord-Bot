@@ -8,6 +8,17 @@ describe('bot music adapter', () => {
     const engine = {
       parse,
       matchCandidates: vi.fn(),
+      enqueue: vi.fn(),
+      enqueueMany: vi.fn(),
+      getQueue: vi.fn(),
+      skip: vi.fn(),
+      stop: vi.fn(),
+      clear: vi.fn(),
+      remove: vi.fn(),
+      move: vi.fn(),
+      shuffle: vi.fn(),
+      setRepeat: vi.fn(),
+      previous: vi.fn(),
       on: vi.fn(),
       shutdown: vi.fn(),
     } satisfies KairoMusicEngine;

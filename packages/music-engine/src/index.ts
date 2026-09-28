@@ -23,6 +23,15 @@ export type {
 } from './api/MetadataOptions.js';
 export type { KairoMusicEvent, Unsubscribe } from './api/events.js';
 export type {
+  QueueEntry,
+  QueueSnapshot,
+  RepeatMode,
+  EnqueueRequest,
+  EnqueueManyRequest,
+  RemoveRequest,
+  MoveRequest,
+} from './api/queue.js';
+export type {
   FixtureTrack,
   ParseRequest,
   ParseResult,

@@ -7,7 +7,10 @@ export type MusicErrorCode =
   | 'PROVIDER_UNAVAILABLE'
   | 'PARSER_CANCELLED'
   | 'PROVIDER_CONFIGURATION_ERROR'
-  | 'NO_RELIABLE_MATCH';
+  | 'NO_RELIABLE_MATCH'
+  | 'QUEUE_EMPTY'
+  | 'QUEUE_LIMIT'
+  | 'INVALID_QUEUE_POSITION';
 
 export class MusicError extends Error {
   constructor(

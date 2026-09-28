@@ -19,6 +19,15 @@ import { YouTubeApiProvider } from '../providers/metadata/YouTubeApiProvider.js'
 import { SpotifyProvider } from '../providers/metadata/SpotifyProvider.js';
 import { MetadataProviderManager } from '../providers/MetadataProviderManager.js';
 import { CandidateMatcher } from '../matching/CandidateMatcher.js';
+import { QueueManager } from '../queue/QueueManager.js';
+import type {
+  EnqueueRequest,
+  EnqueueManyRequest,
+  QueueSnapshot,
+  RemoveRequest,
+  MoveRequest,
+  RepeatMode,
+} from './queue.js';
 import type {
   MatchRequest,
   MatchResult,
@@ -40,11 +49,23 @@ export interface EngineOptions {
   providerQuality?: Readonly<Record<string, number>>;
   artistAliases?: Readonly<Record<string, string>>;
   matcherLogger?: MatcherLogger;
+  maxQueueEntries?: number;
 }
 
 export interface KairoMusicEngine {
   parse(request: ParseRequest): Promise<ParseResult>;
   matchCandidates(request: MatchRequest): MatchResult;
+  enqueue(request: EnqueueRequest): Promise<QueueSnapshot>;
+  enqueueMany(request: EnqueueManyRequest): Promise<QueueSnapshot>;
+  getQueue(guildId: string): QueueSnapshot;
+  skip(guildId: string): Promise<QueueSnapshot>;
+  stop(guildId: string): Promise<QueueSnapshot>;
+  clear(guildId: string): Promise<QueueSnapshot>;
+  remove(request: RemoveRequest): Promise<QueueSnapshot>;
+  move(request: MoveRequest): Promise<QueueSnapshot>;
+  shuffle(guildId: string): Promise<QueueSnapshot>;
+  setRepeat(guildId: string, mode: RepeatMode): Promise<QueueSnapshot>;
+  previous(guildId: string): Promise<QueueSnapshot>;
   on<T extends KairoMusicEvent['type']>(
     type: T,
     listener: (event: Extract<KairoMusicEvent, { type: T }>) => void,
@@ -110,6 +131,11 @@ export function createKairoMusicEngine(
       ? {}
       : { logger: options.matcherLogger }),
   });
+  const queues = new QueueManager(
+    options.maxQueueEntries === undefined
+      ? {}
+      : { maxEntries: options.maxQueueEntries },
+  );
   const listeners = new Map<
     KairoMusicEvent['type'],
     Set<(event: KairoMusicEvent) => void>
@@ -126,6 +152,51 @@ export function createKairoMusicEngine(
   }
 
   return {
+    enqueue(request) {
+      return queues.enqueueMany(
+        request.guildId,
+        [request.track],
+        request.enqueuedBy,
+      );
+    },
+    enqueueMany(request) {
+      return queues.enqueueMany(
+        request.guildId,
+        request.tracks,
+        request.enqueuedBy,
+      );
+    },
+    getQueue(guildId) {
+      return queues.snapshot(guildId);
+    },
+    skip(guildId) {
+      return queues.advance(
+        guildId,
+        queues.snapshot(guildId).generation,
+        'skip',
+      );
+    },
+    stop(guildId) {
+      return queues.stop(guildId);
+    },
+    clear(guildId) {
+      return queues.clear(guildId);
+    },
+    remove(request) {
+      return queues.remove(request);
+    },
+    move(request) {
+      return queues.move(request);
+    },
+    shuffle(guildId) {
+      return queues.shuffle(guildId);
+    },
+    setRepeat(guildId, mode) {
+      return queues.setRepeat(guildId, mode);
+    },
+    previous(guildId) {
+      return queues.previous(guildId);
+    },
     matchCandidates(request) {
       return matcher.match(request);
     },
@@ -229,6 +300,7 @@ export function createKairoMusicEngine(
       return () => bucket.delete(handler);
     },
     async shutdown() {
+      queues.shutdown();
       listeners.clear();
     },
   };
