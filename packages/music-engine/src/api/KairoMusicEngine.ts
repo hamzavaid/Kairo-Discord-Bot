@@ -27,6 +27,11 @@ import { VoiceManager } from '../playback/VoiceManager.js';
 import { PlaybackSession } from '../playback/PlaybackSession.js';
 import { StreamResolver } from '../stream/StreamResolver.js';
 import {
+  YtDlpStreamProvider,
+  type YtDlpOptions,
+} from '../stream/YtDlpStreamProvider.js';
+import type { AudioQuality } from '../stream/AudioQuality.js';
+import {
   FixtureStreamProvider,
   type FixtureAudio,
 } from '../stream/FixtureStreamProvider.js';
@@ -71,6 +76,11 @@ export interface EngineOptions {
   streamTimeoutMs?: number;
   bufferTimeoutMs?: number;
   ffmpegPath?: string;
+  ytDlp?: YtDlpOptions;
+  audioQualityForGuild?: (
+    guildId: string,
+    signal: AbortSignal,
+  ) => Promise<AudioQuality>;
 }
 
 export interface KairoMusicEngine {
@@ -195,7 +205,10 @@ export function createKairoMusicEngine(
     },
   });
   const resolver = new StreamResolver(
-    [new FixtureStreamProvider(options.fixtureAudio ?? {})],
+    [
+      new FixtureStreamProvider(options.fixtureAudio ?? {}),
+      new YtDlpStreamProvider(options.ytDlp),
+    ],
     options.streamTimeoutMs === undefined
       ? {}
       : { timeoutMs: options.streamTimeoutMs },
@@ -244,6 +257,9 @@ export function createKairoMusicEngine(
         ...(options.ffmpegPath === undefined
           ? {}
           : { ffmpegPath: options.ffmpegPath }),
+        ...(options.audioQualityForGuild === undefined
+          ? {}
+          : { audioQualityForGuild: options.audioQualityForGuild }),
         onEnded: (generation, cause) => {
           void handleEnded(guildId, generation, cause);
         },
@@ -255,6 +271,33 @@ export function createKairoMusicEngine(
             guildId,
             code: code as MusicError['code'],
             generation,
+          }),
+        onSourceSelected: (source, entry, audioQuality, generation) =>
+          emit({
+            type: 'playbackSourceSelected',
+            guildId,
+            generation,
+            trackId: entry.track.id,
+            metadataProvider:
+              entry.track.provenance.originalSourceProvider ??
+              entry.track.sourceProvider,
+            ...(entry.track.provenance.candidateSearchProvider
+              ? {
+                  candidateSearchProvider:
+                    entry.track.provenance.candidateSearchProvider,
+                }
+              : {}),
+            ...(entry.track.provenance.selectedCandidateId
+              ? {
+                  selectedCandidateId:
+                    entry.track.provenance.selectedCandidateId,
+                }
+              : {}),
+            ...(entry.track.provenance.confidence === undefined
+              ? {}
+              : { matchConfidence: entry.track.provenance.confidence }),
+            streamProvider: source.sourceProvider,
+            audioQuality: source.audioQuality ?? audioQuality,
           }),
       });
       sessions.set(guildId, current);

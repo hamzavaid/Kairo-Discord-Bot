@@ -24,10 +24,16 @@ export class FFmpegPipeline {
     if (!new AudioProbe().inspect(source).needsTranscode) {
       const input =
         source.kind === 'file' ? createReadStream(source.input) : source.input;
+      let closed = false;
       return {
         input,
         inputType: source.inputType,
-        dispose: () => input.destroy(),
+        dispose: () => {
+          if (closed) return;
+          closed = true;
+          input.destroy();
+          source.dispose?.();
+        },
       };
     }
     const args = [
@@ -52,14 +58,16 @@ export class FFmpegPipeline {
         stdio: ['pipe', 'pipe', 'pipe'],
       }) as ChildProcessWithoutNullStreams;
     } catch {
+      if (source.kind === 'readable') source.input.destroy();
+      source.dispose?.();
       throw new MusicError('FFMPEG_ERROR', 'Audio conversion could not start.');
     }
-    if (source.kind === 'readable') source.input.pipe(child.stdin);
     let closed = false;
     const dispose = () => {
       if (closed) return;
       closed = true;
       if (source.kind === 'readable') source.input.destroy();
+      source.dispose?.();
       child.stdin.destroy();
       child.stdout.destroy();
       child.stderr.destroy();
@@ -68,6 +76,16 @@ export class FFmpegPipeline {
     // Drain diagnostics without retaining raw input or unbounded stderr.
     child.stderr.on('data', () => {});
     child.on('error', dispose);
+    child.stdin.on('error', dispose);
+    if (source.kind === 'readable') {
+      source.input.on('error', () => {
+        child.stdout.destroy(
+          new MusicError('STREAM_UNAVAILABLE', 'Audio streaming failed.', true),
+        );
+        dispose();
+      });
+      source.input.pipe(child.stdin);
+    }
     return { input: child.stdout, inputType: 'ogg/opus', dispose };
   }
 }

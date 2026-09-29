@@ -48,6 +48,7 @@ const schema = new mongoose.Schema<GuildSettings>(
     idleDisconnectSeconds: {
       type: Number,
       required: true,
+      default: DEFAULT_IDLE_DISCONNECT_SECONDS,
       min: 0,
       max: MAX_IDLE_DISCONNECT_SECONDS,
     },

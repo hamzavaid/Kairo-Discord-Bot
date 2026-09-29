@@ -58,6 +58,10 @@ describe('individual command modules', () => {
         ?.name,
     ).toBe('timeout_seconds');
     expect(
+      registration.find((command) => command.name === 'settings')?.options?.[1]
+        ?.name,
+    ).toBe('audio_quality');
+    expect(
       registration.find((command) => command.name === 'auditlog')?.options?.[0]
         ?.name,
     ).toBe('page');

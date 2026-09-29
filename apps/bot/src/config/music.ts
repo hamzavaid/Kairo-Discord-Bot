@@ -36,6 +36,10 @@ export function createBotMusicOptions(environment: Environment): EngineOptions {
     ...(environment.KAIRO_METADATA_PROVIDER
       ? { metadataProvider: environment.KAIRO_METADATA_PROVIDER }
       : {}),
+    ...(environment.KAIRO_PLAYABLE_SEARCH_PROVIDER
+      ? { playableSearchProvider: environment.KAIRO_PLAYABLE_SEARCH_PROVIDER }
+      : {}),
+    ytDlp: { executable: environment.YT_DLP_PATH },
     ...(environment.YOUTUBE_API_KEY?.trim()
       ? { youtubeApi: { apiKey: environment.YOUTUBE_API_KEY.trim() } }
       : {}),
@@ -65,6 +69,7 @@ export function createBotMusicOptions(environment: Environment): EngineOptions {
         }
       : {}),
     maxQueueEntries: environment.MUSIC_MAX_QUEUE_LENGTH,
+    streamTimeoutMs: environment.MUSIC_STREAM_TIMEOUT_MS,
     ffmpegPath: environment.FFMPEG_PATH,
   };
 }

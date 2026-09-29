@@ -59,4 +59,18 @@ describe('Phase 6 bot music configuration', () => {
     addApplicationOwner(developers, { ownerId: '222222222222222222' });
     expect(developers.has('222222222222222222')).toBe(true);
   });
+
+  it('maps playable-source search and executable configuration without provider credentials', () => {
+    const environment = parseEnvironment({
+      ...base,
+      KAIRO_PLAYABLE_SEARCH_PROVIDER: 'youtube-sr',
+      YT_DLP_PATH: 'C:/tools/yt-dlp.exe',
+      MUSIC_STREAM_TIMEOUT_MS: '20000',
+    });
+    expect(createBotMusicOptions(environment)).toMatchObject({
+      playableSearchProvider: 'youtube-sr',
+      ytDlp: { executable: 'C:/tools/yt-dlp.exe' },
+      streamTimeoutMs: 20000,
+    });
+  });
 });

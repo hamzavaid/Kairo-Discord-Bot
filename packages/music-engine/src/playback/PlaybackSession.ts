@@ -14,6 +14,8 @@ import type { QueueEntry } from '../api/queue.js';
 import type { AudioSource, PreparedAudio } from '../stream/AudioSource.js';
 import { FFmpegPipeline } from '../stream/FFmpegPipeline.js';
 import { StreamResolver } from '../stream/StreamResolver.js';
+import type { AudioQuality } from '../stream/AudioQuality.js';
+import { DEFAULT_AUDIO_QUALITY } from '../stream/AudioQuality.js';
 import {
   PlaybackStateMachine,
   type PlaybackState,
@@ -31,8 +33,18 @@ export interface PlaybackSessionOptions {
   ) => void;
   onStateChanged?: (state: PlaybackState, generation: number) => void;
   onFailure?: (code: string, generation: number) => void;
+  onSourceSelected?: (
+    source: AudioSource,
+    entry: QueueEntry,
+    quality: AudioQuality,
+    generation: number,
+  ) => void;
   bufferTimeoutMs?: number;
   ffmpegPath?: string;
+  audioQualityForGuild?: (
+    guildId: string,
+    signal: AbortSignal,
+  ) => Promise<AudioQuality>;
 }
 
 const streamType: Record<string, StreamType> = {
@@ -147,9 +159,29 @@ export class PlaybackSession {
     signal: AbortSignal,
   ): Promise<void> {
     try {
-      const source = await this.options.resolver.resolve(entry.track, signal);
+      let audioQuality: AudioQuality = DEFAULT_AUDIO_QUALITY;
+      if (this.options.audioQualityForGuild)
+        audioQuality = await this.options.audioQualityForGuild(
+          this.options.guildId,
+          signal,
+        );
       if (signal.aborted || this.generation !== generation) return;
-      const prepared = this.prepare(source);
+      const source = await this.options.resolver.resolve(entry.track, signal, {
+        guildId: this.options.guildId,
+        audioQuality,
+      });
+      if (signal.aborted || this.generation !== generation) {
+        source.dispose?.();
+        return;
+      }
+      this.options.onSourceSelected?.(source, entry, audioQuality, generation);
+      let prepared: PreparedAudio;
+      try {
+        prepared = this.prepare(source);
+      } catch (error) {
+        source.dispose?.();
+        throw error;
+      }
       if (signal.aborted || this.generation !== generation) {
         prepared.dispose();
         return;

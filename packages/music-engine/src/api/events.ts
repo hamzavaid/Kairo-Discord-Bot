@@ -1,5 +1,6 @@
 import type { MusicErrorCode } from './errors.js';
 import type { PlaybackState } from '../playback/PlaybackStateMachine.js';
+import type { AudioQuality } from '../stream/AudioQuality.js';
 
 interface ParseEventContext {
   guildId: string;
@@ -24,6 +25,18 @@ export type KairoMusicEvent =
       guildId: string;
       code: MusicErrorCode;
       generation: number;
+    }
+  | {
+      type: 'playbackSourceSelected';
+      guildId: string;
+      generation: number;
+      trackId: string;
+      metadataProvider: string;
+      candidateSearchProvider?: string;
+      selectedCandidateId?: string;
+      matchConfidence?: number;
+      streamProvider: string;
+      audioQuality: AudioQuality;
     };
 
 export type Unsubscribe = () => void;

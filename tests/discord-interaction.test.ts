@@ -68,4 +68,25 @@ describe('Discord interaction adapter and registration', () => {
       (music as unknown as { play: ReturnType<typeof vi.fn> }).play,
     ).not.toHaveBeenCalled();
   });
+
+  it('reads the audio quality option from a settings interaction', () => {
+    const interaction = {
+      commandName: 'settings',
+      user: { id: 'user' },
+      guildId: 'guild',
+      guild: { voiceStates: { cache: new Map() } },
+      client: { ws: { ping: 0 } },
+      createdTimestamp: 0,
+      options: {
+        getString: (name: string) => (name === 'audio_quality' ? 'best' : null),
+        getInteger: () => null,
+      },
+      memberPermissions: { has: () => true },
+    } as unknown as Parameters<typeof toCommandRequest>[0];
+    expect(toCommandRequest(interaction)).toMatchObject({
+      name: 'settings',
+      audioQuality: 'best',
+      canManageGuild: true,
+    });
+  });
 });

@@ -1,4 +1,5 @@
 import type { Readable } from 'node:stream';
+import type { AudioQuality } from './AudioQuality.js';
 
 export type AudioInputType =
   'opus' | 'ogg/opus' | 'webm/opus' | 'raw' | 'arbitrary';
@@ -10,6 +11,8 @@ export type AudioSource =
       inputType: AudioInputType;
       sourceProvider: string;
       seekable: boolean;
+      audioQuality?: AudioQuality;
+      dispose?(): void;
     }
   | {
       kind: 'file';
@@ -17,6 +20,8 @@ export type AudioSource =
       inputType: AudioInputType;
       sourceProvider: string;
       seekable: boolean;
+      audioQuality?: AudioQuality;
+      dispose?(): void;
     };
 
 export interface PreparedAudio {

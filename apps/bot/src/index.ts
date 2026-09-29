@@ -26,10 +26,14 @@ if (
 ) {
   throw new Error('KAIRO_FIXTURE_AUDIO_PATH does not exist.');
 }
-const engine = createKairoMusicEngine(createBotMusicOptions(environment));
+const database = await connectGuildSettings(environment.MONGODB_URI);
+const engine = createKairoMusicEngine({
+  ...createBotMusicOptions(environment),
+  audioQualityForGuild: async (guildId) =>
+    (await database.repository.get(guildId)).audioQuality,
+});
 const music = new MusicService(new KairoMusicClient(engine));
 const audit = new AuditLog();
-const database = await connectGuildSettings(environment.MONGODB_URI);
 const developerIds = new Set(developerIdsFromEnvironment(environment));
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],

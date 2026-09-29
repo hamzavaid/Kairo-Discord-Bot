@@ -19,11 +19,13 @@ const environmentSchema = z.object({
   MUSIC_IDLE_DISCONNECT_SECONDS: positiveInt(300),
   MUSIC_DEFAULT_VOLUME: z.coerce.number().min(0).max(1).default(0.75),
   MUSIC_MATCH_THRESHOLD: z.coerce.number().min(0).max(1).default(0.82),
+  MUSIC_STREAM_TIMEOUT_MS: positiveInt(20_000),
   PARSER_PROVIDER_TIMEOUT_MS: positiveInt(8000),
   PARSER_SEARCH_CACHE_SECONDS: positiveInt(300),
   PARSER_METADATA_CACHE_SECONDS: positiveInt(21600),
   FFMPEG_PATH: z.string().min(1).default('ffmpeg'),
   FFPROBE_PATH: z.string().min(1).default('ffprobe'),
+  YT_DLP_PATH: z.string().min(1).default('yt-dlp'),
   YOUTUBE_API_KEY: z.string().optional(),
   SPOTIFY_CLIENT_ID: z.string().optional(),
   SPOTIFY_CLIENT_SECRET: z.string().optional(),
@@ -31,6 +33,10 @@ const environmentSchema = z.object({
   KAIRO_METADATA_PROVIDER: z.preprocess(
     (value) => (value === '' ? undefined : value),
     z.enum(['youtube-sr', 'youtube-api', 'spotify', 'musicbrainz']).optional(),
+  ),
+  KAIRO_PLAYABLE_SEARCH_PROVIDER: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.enum(['youtube-sr', 'youtube-api']).optional(),
   ),
   KAIRO_FIXTURE_AUDIO_PATH: z.string().optional(),
   KAIRO_FIXTURE_AUDIO_INPUT_TYPE: z.preprocess(

@@ -196,4 +196,47 @@ describe('Phase 5 voice and session cleanup', () => {
     expect(dispose).toHaveBeenCalledOnce();
     expect(session.snapshot().state).toBe('IDLE');
   });
+
+  it('reads guild quality at track start and passes it to stream resolution', async () => {
+    const resolver = {
+      resolve: vi.fn(async () => ({
+        kind: 'readable',
+        input: null,
+        inputType: 'opus',
+        sourceProvider: 'fixture',
+        seekable: false,
+      })),
+    };
+    const player = Object.assign(new EventEmitter(), {
+      play: vi.fn(),
+      stop: vi.fn(),
+      pause: vi.fn(),
+      unpause: vi.fn(),
+    });
+    const quality = vi.fn(async () => 'best' as const);
+    const session = new PlaybackSession({
+      guildId: 'guild',
+      resolver: resolver as never,
+      player: player as never,
+      audioQualityForGuild: quality,
+      prepare: () => ({
+        input: null as never,
+        inputType: 'opus',
+        dispose: vi.fn(),
+      }),
+      createResource: ((_input: unknown, options: { metadata: unknown }) => ({
+        metadata: options.metadata,
+      })) as never,
+    });
+    session.attach({ subscribe: () => ({ unsubscribe: vi.fn() }) } as never);
+    session.start(entry, 1);
+    await vi.waitFor(() => expect(resolver.resolve).toHaveBeenCalled());
+    expect(quality).toHaveBeenCalledWith('guild', expect.any(AbortSignal));
+    expect(resolver.resolve).toHaveBeenCalledWith(
+      track,
+      expect.any(AbortSignal),
+      { guildId: 'guild', audioQuality: 'best' },
+    );
+    session.disconnect();
+  });
 });
