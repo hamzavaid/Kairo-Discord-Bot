@@ -57,7 +57,8 @@ export class MusicService {
     const state = this.client.getPlayback(guildId).state;
     const connected = state !== 'DISCONNECTED';
     if (connected) this.assertVoiceChannel(guildId, voiceTarget.channelId);
-    const track = await this.resolve(query, guildId, userId);
+    const metadata = await this.resolve(query, guildId, userId);
+    const track = await this.client.preparePlayable(metadata);
     if (!this.client.canPlay(track))
       throw new MusicError(
         'STREAM_UNAVAILABLE',

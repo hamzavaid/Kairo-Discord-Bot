@@ -90,6 +90,32 @@ export class MetadataProviderManager {
     );
   }
 
+  /** Exact provider search for playable candidates; never applies the metadata fallback chain. */
+  async searchOn(
+    id: MetadataProviderId,
+    query: string,
+    maxResults: number,
+    signal?: AbortSignal,
+  ): Promise<MetadataResponse<ProviderTrack[]>> {
+    if (signal?.aborted)
+      throw new MusicError(
+        'PARSER_CANCELLED',
+        'The music request was cancelled.',
+      );
+    const provider = this.registry.getMetadataProvider(id);
+    if (!provider.search)
+      throw new MusicError(
+        'UNSUPPORTED_PROVIDER',
+        'This music source is not supported.',
+      );
+    const value = await this.safe(
+      () => provider.search!(query, maxResults, signal),
+      signal,
+    );
+    for (const track of value) validateProviderTrack(track);
+    return { provider, value };
+  }
+
   private async safe<T>(
     operation: () => Promise<T>,
     signal?: AbortSignal,

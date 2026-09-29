@@ -23,6 +23,9 @@ export interface TrackProvenance {
     providerQuality: number;
     versionCompatibility: number;
   };
+  candidateSearchProvider?: string;
+  selectedCandidateId?: string;
+  streamProvider?: string;
 }
 
 export interface Track {

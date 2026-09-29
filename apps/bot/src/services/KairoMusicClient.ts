@@ -19,6 +19,10 @@ export class KairoMusicClient {
     return this.engine.parse({ input, guildId, requestedBy });
   }
 
+  preparePlayable(track: Track): Promise<Track> {
+    return this.engine.preparePlayable(track);
+  }
+
   canPlay(track: Track): boolean {
     return this.engine.canPlay(track);
   }

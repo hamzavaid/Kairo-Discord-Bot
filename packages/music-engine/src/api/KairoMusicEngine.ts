@@ -19,6 +19,8 @@ import { YouTubeApiProvider } from '../providers/metadata/YouTubeApiProvider.js'
 import { SpotifyProvider } from '../providers/metadata/SpotifyProvider.js';
 import { MetadataProviderManager } from '../providers/MetadataProviderManager.js';
 import { CandidateMatcher } from '../matching/CandidateMatcher.js';
+import { PlayableCandidateResolver } from '../matching/PlayableCandidateResolver.js';
+import type { Track } from '../domain/Track.js';
 import { QueueManager } from '../queue/QueueManager.js';
 import { QueueMutex } from '../queue/QueueMutex.js';
 import { VoiceManager } from '../playback/VoiceManager.js';
@@ -62,6 +64,7 @@ export interface EngineOptions {
   providerQuality?: Readonly<Record<string, number>>;
   artistAliases?: Readonly<Record<string, string>>;
   matcherLogger?: MatcherLogger;
+  playableSearchProvider?: 'youtube-sr' | 'youtube-api';
   maxQueueEntries?: number;
   fixtureAudio?: Readonly<Record<string, FixtureAudio>>;
   playbackRuntime?: PlaybackRuntime;
@@ -72,6 +75,7 @@ export interface EngineOptions {
 
 export interface KairoMusicEngine {
   parse(request: ParseRequest): Promise<ParseResult>;
+  preparePlayable(track: Track, signal?: AbortSignal): Promise<Track>;
   canPlay(track: import('../domain/Track.js').Track): boolean;
   matchCandidates(request: MatchRequest): MatchResult;
   enqueue(request: EnqueueRequest): Promise<QueueSnapshot>;
@@ -110,7 +114,11 @@ export function createKairoMusicEngine(
   const registry = new ProviderRegistry(options.providerPriority);
   registry.register(new FixtureProvider(options.fixtureTracks ?? []));
   const selected = options.metadataProvider ?? 'youtube-sr';
-  const required = new Set([selected, ...(options.fallbackProviders ?? [])]);
+  const required = new Set([
+    selected,
+    ...(options.fallbackProviders ?? []),
+    options.playableSearchProvider ?? 'youtube-sr',
+  ]);
   registry.register(new YoutubeSrProvider(options.youtubeSr));
   if (options.youtubeApi || required.has('youtube-api')) {
     if (!options.youtubeApi?.apiKey?.trim())
@@ -162,6 +170,11 @@ export function createKairoMusicEngine(
       ? {}
       : { logger: options.matcherLogger }),
   });
+  const playable = new PlayableCandidateResolver(
+    manager,
+    matcher,
+    options.playableSearchProvider ?? 'youtube-sr',
+  );
   const queues = new QueueManager(
     options.maxQueueEntries === undefined
       ? {}
@@ -287,6 +300,9 @@ export function createKairoMusicEngine(
   }
 
   return {
+    preparePlayable(track, signal) {
+      return playable.prepare(track, signal);
+    },
     canPlay(track) {
       return resolver.canResolve(track);
     },

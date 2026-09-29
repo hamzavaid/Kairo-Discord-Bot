@@ -23,6 +23,7 @@ const target = {
 function setup() {
   const engine = {
     parse: vi.fn().mockResolvedValue({ kind: 'track', track: track('one') }),
+    preparePlayable: vi.fn(async (value: Track) => value),
     enqueue: vi.fn().mockResolvedValue({
       guildId: 'guild',
       current: { track: track('one') },
@@ -58,12 +59,34 @@ describe('Phase 6 MusicService', () => {
       requestedBy: 'user',
     });
     expect(engine.connectVoice).toHaveBeenCalledWith(target);
+    expect(engine.preparePlayable).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'fixture:one' }),
+    );
     expect(engine.enqueue).toHaveBeenCalledWith({
       guildId: 'guild',
       enqueuedBy: 'user',
       track: expect.objectContaining({ id: 'fixture:one' }),
     });
     expect(result.track.title).toBe('Song one');
+  });
+
+  it('enqueues the verified playable candidate returned by the engine', async () => {
+    const { engine, service } = setup();
+    const candidate = {
+      ...track('video'),
+      sourceProvider: 'youtube-sr',
+      sourceId: 'dQw4w9WgXcQ',
+    };
+    engine.preparePlayable.mockResolvedValue(candidate);
+    await service.play({
+      guildId: 'guild',
+      userId: 'user',
+      query: 'catalog song',
+      voiceTarget: target,
+    });
+    expect(engine.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ track: candidate }),
+    );
   });
 
   it('queues a search result while already playing without reconnecting', async () => {
