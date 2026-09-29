@@ -58,4 +58,8 @@ export class KairoMusicClient {
   stop(guildId: string): Promise<QueueSnapshot> {
     return this.engine.stop(guildId);
   }
+
+  disconnectVoice(guildId: string): Promise<PlaybackSnapshot> {
+    return this.engine.disconnectVoice(guildId);
+  }
 }

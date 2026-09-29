@@ -1,4 +1,8 @@
-import { MessageFlags, type ChatInputCommandInteraction } from 'discord.js';
+import {
+  MessageFlags,
+  PermissionFlagsBits,
+  type ChatInputCommandInteraction,
+} from 'discord.js';
 import type { CommandRequest } from './types.js';
 
 /** Discord objects stop here; controllers receive a small application request. */
@@ -31,6 +35,12 @@ export function toCommandRequest(
     ...(interaction.options.getInteger('page') === null
       ? {}
       : { page: interaction.options.getInteger('page')! }),
+    ...(interaction.options.getInteger('timeout_seconds') === null
+      ? {}
+      : { timeoutSeconds: interaction.options.getInteger('timeout_seconds')! }),
+    canManageGuild:
+      interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild) ??
+      false,
     createdTimestamp: interaction.createdTimestamp,
     websocketPing: interaction.client.ws.ping,
     async defer() {

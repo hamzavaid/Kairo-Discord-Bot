@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { Client, GatewayIntentBits, Events, REST } from 'discord.js';
 import { createKairoMusicEngine } from '@kairo/music-engine';
 import { createLogger, parseEnvironment } from '@kairo/shared';
+import { connectGuildSettings } from '@kairo/data';
 import { KairoMusicClient } from './services/KairoMusicClient.js';
 import { MusicService } from './services/MusicService.js';
 import {
@@ -14,6 +15,7 @@ import { createCommandRegistry } from './commands/registry.js';
 import { InteractionRouter } from './commands/InteractionRouter.js';
 import { toCommandRequest } from './commands/discordAdapter.js';
 import { registerCommands } from './commands/registerCommands.js';
+import { VoiceIdleManager } from './voice/VoiceIdleManager.js';
 
 if (existsSync('.env')) process.loadEnvFile('.env');
 const environment = parseEnvironment(process.env);
@@ -27,13 +29,77 @@ if (
 const engine = createKairoMusicEngine(createBotMusicOptions(environment));
 const music = new MusicService(new KairoMusicClient(engine));
 const audit = new AuditLog();
-const registry = createCommandRegistry(music, audit);
+const database = await connectGuildSettings(environment.MONGODB_URI);
 const developerIds = new Set(developerIdsFromEnvironment(environment));
-const router = new InteractionRouter(registry, audit, developerIds);
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
 });
+const idle = new VoiceIdleManager(
+  database.repository,
+  (guildId) => {
+    const guild = client.guilds.cache.get(guildId);
+    const channelId =
+      (client.user &&
+        guild?.voiceStates.cache.get(client.user.id)?.channelId) ||
+      music.voiceChannel(guildId);
+    const humanCount =
+      channelId && guild
+        ? guild.voiceStates.cache.filter(
+            (state) =>
+              state.channelId === channelId &&
+              state.id !== client.user?.id &&
+              state.member?.user.bot !== true,
+          ).size
+        : 0;
+    return { channelId, humanCount };
+  },
+  async (guildId) => {
+    try {
+      await music.disconnect(guildId);
+      logger.info({ guildId }, 'Left empty voice channel');
+    } catch {
+      logger.error({ guildId }, 'Empty-channel disconnect failed');
+    }
+  },
+);
+const registry = createCommandRegistry(
+  music,
+  audit,
+  database.repository,
+  async (guildId) => {
+    await idle
+      .refresh(guildId)
+      .catch(() => logger.error({ guildId }, 'Voice idle check failed'));
+  },
+  async (guildId) => {
+    await idle
+      .refresh(guildId)
+      .catch(() => logger.error({ guildId }, 'Voice idle check failed'));
+  },
+);
+const router = new InteractionRouter(registry, audit, developerIds);
 const rest = new REST({ version: '10' }).setToken(environment.DISCORD_TOKEN);
+
+client.on(Events.VoiceStateUpdate, (oldState, newState) => {
+  const guildId = newState.guild.id;
+  if (
+    newState.id === client.user?.id &&
+    oldState.channelId &&
+    !newState.channelId
+  ) {
+    idle.cancel(guildId);
+    music.forgetVoiceChannel(guildId);
+    void music
+      .disconnect(guildId)
+      .catch(() =>
+        logger.error({ guildId }, 'Voice disconnect cleanup failed'),
+      );
+    return;
+  }
+  void idle
+    .refresh(guildId)
+    .catch(() => logger.error({ guildId }, 'Voice idle check failed'));
+});
 
 client.once(Events.ClientReady, async () => {
   logger.info({ clientId: client.user?.id }, 'Kairo ready');
@@ -70,8 +136,10 @@ let closing = false;
 async function close(): Promise<void> {
   if (closing) return;
   closing = true;
+  idle.shutdown();
   await engine.shutdown();
   client.destroy();
+  await database.close();
 }
 process.once('SIGINT', () => void close());
 process.once('SIGTERM', () => void close());

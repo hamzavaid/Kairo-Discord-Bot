@@ -5,6 +5,7 @@ import type { MusicService } from '../services/MusicService.js';
 import type { CommandDefinition, CommandContext } from './types.js';
 import { CommandError } from '../errors.js';
 import { AuditLog } from './AuditLog.js';
+import type { GuildSettingsRepository } from '@kairo/data';
 
 function guild(context: CommandContext): string {
   if (!context.guildId)
@@ -90,6 +91,16 @@ export class ApplicationCommandRegistry {
             .setDescription('Audit page number')
             .setMinValue(1),
         );
+      if (command.timeoutOption)
+        builder.addIntegerOption((option) =>
+          option
+            .setName('timeout_seconds')
+            .setDescription(
+              'Seconds before leaving an empty voice channel; 0 disables (maximum 3600)',
+            )
+            .setMinValue(0)
+            .setMaxValue(3600),
+        );
       return builder.toJSON();
     });
   }
@@ -98,6 +109,9 @@ export class ApplicationCommandRegistry {
 export function createCommandRegistry(
   music: MusicService,
   audit: AuditLog,
+  settings?: GuildSettingsRepository,
+  onSettingsChanged?: (guildId: string) => Promise<void>,
+  onVoiceActivity?: (guildId: string) => Promise<void>,
 ): ApplicationCommandRegistry {
   const registry = new ApplicationCommandRegistry();
   const add = (definition: CommandDefinition) => registry.add(definition);
@@ -121,6 +135,7 @@ export function createCommandRegistry(
         query: query(context),
         voiceTarget: context.voiceTarget,
       });
+      await onVoiceActivity?.(guildId);
       return {
         content:
           result.position === 0
@@ -170,6 +185,16 @@ export function createCommandRegistry(
     },
   });
   add({
+    name: 'disconnect',
+    description: 'Leave voice and clear playback',
+    usage: '/disconnect',
+    category: 'Music',
+    async execute(context) {
+      await music.disconnect(guild(context));
+      return { content: 'Disconnected from voice.' };
+    },
+  });
+  add({
     name: 'queue',
     description: 'Show the current queue',
     usage: '/queue',
@@ -199,6 +224,37 @@ export function createCommandRegistry(
       const ws = context.websocketPing;
       return {
         content: `API: ${api} ms | WebSocket: ${ws === undefined || ws < 0 ? 'unavailable' : `${ws} ms`}`,
+      };
+    },
+  });
+  add({
+    name: 'settings',
+    description: 'Show or change this server’s empty-channel timeout',
+    usage: '/settings [timeout_seconds]',
+    category: 'Utility',
+    timeoutOption: true,
+    async execute(context) {
+      const guildId = guild(context);
+      if (!settings) throw new Error('Guild settings repository unavailable.');
+      if (context.timeoutSeconds !== undefined) {
+        if (!context.canManageGuild && !context.isDeveloper)
+          throw new CommandError(
+            'UNAUTHORIZED',
+            'Manage Server permission is required to change settings.',
+          );
+        await settings.setIdleDisconnectSeconds(
+          guildId,
+          context.timeoutSeconds,
+        );
+        await onSettingsChanged?.(guildId);
+      }
+      const current = await settings.get(guildId);
+      return {
+        content:
+          current.idleDisconnectSeconds === 0
+            ? 'Empty-channel auto-disconnect: disabled.'
+            : `Empty-channel auto-disconnect: ${current.idleDisconnectSeconds} seconds.`,
+        ephemeral: true,
       };
     },
   });

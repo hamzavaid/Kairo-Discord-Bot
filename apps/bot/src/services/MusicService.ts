@@ -96,4 +96,17 @@ export class MusicService {
   stop(guildId: string) {
     return this.client.stop(guildId);
   }
+
+  async disconnect(guildId: string): Promise<void> {
+    await this.client.disconnectVoice(guildId);
+    this.channels.delete(guildId);
+  }
+
+  forgetVoiceChannel(guildId: string): void {
+    this.channels.delete(guildId);
+  }
+
+  voiceChannel(guildId: string): string | undefined {
+    return this.channels.get(guildId);
+  }
 }

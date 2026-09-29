@@ -7,6 +7,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@kairo/data": "workspace:^",
     "@kairo/music-engine": "workspace:*",
     "@kairo/shared": "workspace:*",
     "discord.js": "^14.27.0"

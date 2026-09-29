@@ -8,6 +8,8 @@ export interface CommandRequest {
   voiceTarget?: VoiceTarget;
   query?: string;
   page?: number;
+  timeoutSeconds?: number;
+  canManageGuild?: boolean;
   createdTimestamp: number;
   websocketPing?: number;
   defer(): Promise<void>;
@@ -30,6 +32,7 @@ export interface CommandDefinition {
   category: 'Music' | 'Utility' | 'Developer';
   queryOption?: boolean;
   pageOption?: boolean;
+  timeoutOption?: boolean;
   defer?: boolean;
   developerOnly?: boolean;
   execute(context: CommandContext): Promise<CommandReply>;

@@ -10,6 +10,9 @@ export default defineConfig({
       '@kairo/shared': fileURLToPath(
         new URL('./packages/shared/src/index.ts', import.meta.url),
       ),
+      '@kairo/data': fileURLToPath(
+        new URL('./packages/data/src/index.ts', import.meta.url),
+      ),
     },
   },
   test: { include: ['tests/**/*.test.ts'] },

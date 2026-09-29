@@ -26,13 +26,28 @@ function setup() {
     resume: vi.fn().mockResolvedValue({ state: 'PLAYING' }),
     skip: vi.fn().mockResolvedValue({ current: undefined }),
     stop: vi.fn().mockResolvedValue({ current: undefined }),
+    disconnect: vi.fn().mockResolvedValue(undefined),
     queue: vi.fn().mockReturnValue({ current: undefined, upcoming: [] }),
     assertVoiceChannel: vi.fn(),
   };
   const audit = new AuditLog();
+  const settings = new Map<string, number>();
+  const settingsRepository = {
+    get: vi.fn(async (guildId: string) => ({
+      guildId,
+      idleDisconnectSeconds: settings.get(guildId) ?? 60,
+    })),
+    setIdleDisconnectSeconds: vi.fn(async (guildId: string, value: number) => {
+      if (!Number.isInteger(value) || value < 0 || value > 3600)
+        throw new RangeError('Invalid timeout');
+      settings.set(guildId, value);
+      return { guildId, idleDisconnectSeconds: value };
+    }),
+  };
   const registry = createCommandRegistry(
     music as unknown as MusicService,
     audit,
+    settingsRepository,
   );
   const router = new InteractionRouter(registry, audit, new Set(['developer']));
   const responses: string[] = [];
@@ -55,7 +70,15 @@ function setup() {
     }),
     ...extra,
   });
-  return { music, audit, registry, router, request, responses };
+  return {
+    music,
+    audit,
+    registry,
+    router,
+    request,
+    responses,
+    settingsRepository,
+  };
 }
 
 describe('Phase 6 command routing and audits', () => {
@@ -67,13 +90,15 @@ describe('Phase 6 command routing and audits', () => {
       'resume',
       'skip',
       'stop',
+      'disconnect',
       'queue',
       'ping',
+      'settings',
       'help',
       'info',
       'auditlog',
     ]);
-    expect(registry.registrationData()).toHaveLength(10);
+    expect(registry.registrationData()).toHaveLength(12);
     await router.execute(request('help'));
     expect(responses[0]).toContain('/play <query>');
     expect(responses[0]).toContain('/ping');
@@ -122,6 +147,29 @@ describe('Phase 6 command routing and audits', () => {
     expect(music.skip).toHaveBeenCalledWith('guild');
     expect(music.stop).toHaveBeenCalledWith('guild');
     expect(music.queue).toHaveBeenCalledWith('guild');
+  });
+
+  it('disconnects through MusicService without needing the user in voice', async () => {
+    const { music, router, request } = setup();
+    await router.execute(request('disconnect', { voiceChannelId: undefined }));
+    expect(music.disconnect).toHaveBeenCalledWith('guild');
+  });
+
+  it('shows default guild settings and restricts changes to server managers', async () => {
+    const { router, request, responses, audit, settingsRepository } = setup();
+    await router.execute(request('settings'));
+    expect(responses.at(-1)).toContain('60 seconds');
+    await router.execute(request('settings', { timeoutSeconds: 120 }));
+    expect(audit.list(1, 1)[0]?.errorCode).toBe('UNAUTHORIZED');
+    expect(settingsRepository.setIdleDisconnectSeconds).not.toHaveBeenCalled();
+    await router.execute(
+      request('settings', { timeoutSeconds: 120, canManageGuild: true }),
+    );
+    expect(responses.at(-1)).toContain('120 seconds');
+    await router.execute(
+      request('settings', { timeoutSeconds: 0, canManageGuild: true }),
+    );
+    expect(responses.at(-1)).toContain('disabled');
   });
 
   it('returns ping latency without calling music', async () => {

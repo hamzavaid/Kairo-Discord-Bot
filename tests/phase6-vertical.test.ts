@@ -108,6 +108,21 @@ describe('Phase 6 offline Discord-to-playback slice', () => {
         respond,
       });
       expect(engine.getPlayback('guild').state).toBe('PLAYING');
+      await router.execute({
+        name: 'disconnect',
+        guildId: 'guild',
+        userId: 'user',
+        createdTimestamp: Date.now(),
+        defer: async () => {},
+        respond,
+      });
+      expect(engine.getPlayback('guild').state).toBe('DISCONNECTED');
+      expect(engine.getQueue('guild').current).toBeUndefined();
+      expect(connection.destroy).toHaveBeenCalled();
+      expect(respond).toHaveBeenLastCalledWith(
+        'Disconnected from voice.',
+        false,
+      );
     } finally {
       await engine.shutdown();
     }
