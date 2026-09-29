@@ -11,15 +11,19 @@ describe('persisted guild voice settings', () => {
       (
         filter: { guildId: string },
         change: { $set: { idleDisconnectSeconds: number } },
-      ) => ({
-        exec: async () => {
-          records.set(filter.guildId, change.$set.idleDisconnectSeconds);
-          return {
-            guildId: filter.guildId,
-            idleDisconnectSeconds: change.$set.idleDisconnectSeconds,
-          };
-        },
-      }),
+        _options: Record<string, unknown>,
+      ) => {
+        void _options;
+        return {
+          exec: async () => {
+            records.set(filter.guildId, change.$set.idleDisconnectSeconds);
+            return {
+              guildId: filter.guildId,
+              idleDisconnectSeconds: change.$set.idleDisconnectSeconds,
+            };
+          },
+        };
+      },
     );
     const model = {
       findOne: (filter: { guildId: string }) => ({
@@ -54,8 +58,13 @@ describe('persisted guild voice settings', () => {
     expect(update).toHaveBeenCalledWith(
       { guildId: 'a' },
       { $set: { idleDisconnectSeconds: 120 } },
-      expect.objectContaining({ upsert: true, runValidators: true }),
+      expect.objectContaining({
+        upsert: true,
+        runValidators: true,
+        returnDocument: 'after',
+      }),
     );
+    expect(update.mock.calls[0]?.[2]).not.toHaveProperty('new');
   });
 
   it('rejects invalid timeout values before writing', () => {

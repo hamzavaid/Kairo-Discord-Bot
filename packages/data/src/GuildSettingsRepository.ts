@@ -65,7 +65,12 @@ export class MongoGuildSettingsRepository implements GuildSettingsRepository {
       .findOneAndUpdate(
         { guildId },
         { $set: { idleDisconnectSeconds: seconds } },
-        { upsert: true, new: true, runValidators: true, lean: true },
+        {
+          upsert: true,
+          returnDocument: 'after',
+          runValidators: true,
+          lean: true,
+        },
       )
       .exec();
     if (!record) throw new Error('Guild settings write failed.');
