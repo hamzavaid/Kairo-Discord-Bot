@@ -5,6 +5,7 @@ import { createCommandRegistry } from '../apps/bot/src/commands/registry.js';
 import { InteractionRouter } from '../apps/bot/src/commands/InteractionRouter.js';
 import type { CommandRequest } from '../apps/bot/src/commands/types.js';
 import type { MusicService } from '../apps/bot/src/services/MusicService.js';
+import type { AudioQuality } from '../packages/data/src/GuildSettingsRepository.js';
 
 function setup() {
   const music = {
@@ -31,17 +32,39 @@ function setup() {
     assertVoiceChannel: vi.fn(),
   };
   const audit = new AuditLog();
-  const settings = new Map<string, number>();
+  const settings = new Map<
+    string,
+    { timeout: number; quality: AudioQuality }
+  >();
   const settingsRepository = {
     get: vi.fn(async (guildId: string) => ({
       guildId,
-      idleDisconnectSeconds: settings.get(guildId) ?? 60,
+      idleDisconnectSeconds: settings.get(guildId)?.timeout ?? 60,
+      audioQuality: settings.get(guildId)?.quality ?? 'high',
     })),
     setIdleDisconnectSeconds: vi.fn(async (guildId: string, value: number) => {
       if (!Number.isInteger(value) || value < 0 || value > 3600)
         throw new RangeError('Invalid timeout');
-      settings.set(guildId, value);
-      return { guildId, idleDisconnectSeconds: value };
+      settings.set(guildId, {
+        timeout: value,
+        quality: settings.get(guildId)?.quality ?? 'high',
+      });
+      return {
+        guildId,
+        idleDisconnectSeconds: value,
+        audioQuality: settings.get(guildId)!.quality,
+      };
+    }),
+    setAudioQuality: vi.fn(async (guildId: string, quality: AudioQuality) => {
+      settings.set(guildId, {
+        timeout: settings.get(guildId)?.timeout ?? 60,
+        quality,
+      });
+      return {
+        guildId,
+        idleDisconnectSeconds: settings.get(guildId)!.timeout,
+        audioQuality: quality,
+      };
     }),
   };
   const registry = createCommandRegistry(
@@ -170,6 +193,22 @@ describe('Phase 6 command routing and audits', () => {
       request('settings', { timeoutSeconds: 0, canManageGuild: true }),
     );
     expect(responses.at(-1)).toContain('disabled');
+  });
+
+  it('shows and saves audio quality with server-side permission checks', async () => {
+    const { router, request, responses, settingsRepository } = setup();
+    await router.execute(request('settings'));
+    expect(responses.at(-1)).toContain('high');
+    await router.execute(request('settings', { audioQuality: 'best' }));
+    expect(settingsRepository.setAudioQuality).not.toHaveBeenCalled();
+    await router.execute(
+      request('settings', { audioQuality: 'low', canManageGuild: true }),
+    );
+    expect(settingsRepository.setAudioQuality).toHaveBeenCalledWith(
+      'guild',
+      'low',
+    );
+    expect(responses.at(-1)).toContain('low');
   });
 
   it('returns ping latency without calling music', async () => {

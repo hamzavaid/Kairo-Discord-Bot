@@ -67,6 +67,18 @@ export class ApplicationCommandRegistry {
             .setMinValue(0)
             .setMaxValue(3600),
         );
+      if (command.audioQualityOption)
+        builder.addStringOption((option) =>
+          option
+            .setName('audio_quality')
+            .setDescription('Playback audio quality')
+            .addChoices(
+              { name: 'Low', value: 'low' },
+              { name: 'Medium', value: 'medium' },
+              { name: 'High', value: 'high' },
+              { name: 'Best', value: 'best' },
+            ),
+        );
       return builder.toJSON();
     });
   }

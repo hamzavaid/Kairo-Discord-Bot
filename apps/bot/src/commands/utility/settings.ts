@@ -10,30 +10,38 @@ export function createSettingsCommand(
   return {
     name: 'settings',
     description: 'Show or change this server’s empty-channel timeout',
-    usage: '/settings [timeout_seconds]',
+    usage: '/settings [timeout_seconds] [audio_quality]',
     category: 'Utility',
     timeoutOption: true,
+    audioQualityOption: true,
     async execute(context) {
       const guildId = guild(context);
       if (!settings) throw new Error('Guild settings repository unavailable.');
-      if (context.timeoutSeconds !== undefined) {
+      if (
+        context.timeoutSeconds !== undefined ||
+        context.audioQuality !== undefined
+      ) {
         if (!context.canManageGuild && !context.isDeveloper)
           throw new CommandError(
             'UNAUTHORIZED',
             'Manage Server permission is required to change settings.',
           );
-        await settings.setIdleDisconnectSeconds(
-          guildId,
-          context.timeoutSeconds,
-        );
+        if (context.timeoutSeconds !== undefined)
+          await settings.setIdleDisconnectSeconds(
+            guildId,
+            context.timeoutSeconds,
+          );
+        if (context.audioQuality !== undefined)
+          await settings.setAudioQuality(guildId, context.audioQuality);
         await onSettingsChanged?.(guildId);
       }
       const current = await settings.get(guildId);
       return {
         content:
-          current.idleDisconnectSeconds === 0
+          `Audio quality: ${current.audioQuality}.\n` +
+          (current.idleDisconnectSeconds === 0
             ? 'Empty-channel auto-disconnect: disabled.'
-            : `Empty-channel auto-disconnect: ${current.idleDisconnectSeconds} seconds.`,
+            : `Empty-channel auto-disconnect: ${current.idleDisconnectSeconds} seconds.`),
         ephemeral: true,
       };
     },

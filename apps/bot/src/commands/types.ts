@@ -9,6 +9,7 @@ export interface CommandRequest {
   query?: string;
   page?: number;
   timeoutSeconds?: number;
+  audioQuality?: 'low' | 'medium' | 'high' | 'best';
   canManageGuild?: boolean;
   createdTimestamp: number;
   websocketPing?: number;
@@ -33,6 +34,7 @@ export interface CommandDefinition {
   queryOption?: boolean;
   pageOption?: boolean;
   timeoutOption?: boolean;
+  audioQualityOption?: boolean;
   defer?: boolean;
   developerOnly?: boolean;
   execute(context: CommandContext): Promise<CommandReply>;

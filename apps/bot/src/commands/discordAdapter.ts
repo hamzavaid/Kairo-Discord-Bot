@@ -38,6 +38,13 @@ export function toCommandRequest(
     ...(interaction.options.getInteger('timeout_seconds') === null
       ? {}
       : { timeoutSeconds: interaction.options.getInteger('timeout_seconds')! }),
+    ...(interaction.options.getString('audio_quality') === null
+      ? {}
+      : {
+          audioQuality: interaction.options.getString(
+            'audio_quality',
+          )! as NonNullable<CommandRequest['audioQuality']>,
+        }),
     canManageGuild:
       interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild) ??
       false,
