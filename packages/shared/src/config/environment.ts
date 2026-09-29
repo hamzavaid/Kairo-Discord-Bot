@@ -28,6 +28,16 @@ const environmentSchema = z.object({
   SPOTIFY_CLIENT_ID: z.string().optional(),
   SPOTIFY_CLIENT_SECRET: z.string().optional(),
   MUSICBRAINZ_USER_AGENT: z.string().optional(),
+  KAIRO_METADATA_PROVIDER: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.enum(['youtube-sr', 'youtube-api', 'spotify', 'musicbrainz']).optional(),
+  ),
+  KAIRO_FIXTURE_AUDIO_PATH: z.string().optional(),
+  KAIRO_FIXTURE_AUDIO_INPUT_TYPE: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.enum(['ogg/opus', 'webm/opus', 'raw', 'arbitrary']).optional(),
+  ),
+  KAIRO_DEVELOPER_IDS: z.string().default(''),
 });
 
 export type Environment = z.infer<typeof environmentSchema>;

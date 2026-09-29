@@ -1,4 +1,11 @@
-import type { KairoMusicEngine, ParseResult } from '@kairo/music-engine';
+import type {
+  KairoMusicEngine,
+  ParseResult,
+  QueueSnapshot,
+  PlaybackSnapshot,
+  Track,
+  VoiceTarget,
+} from '@kairo/music-engine';
 
 /** Discord application adapter; engine internals stay behind the package entry point. */
 export class KairoMusicClient {
@@ -10,5 +17,45 @@ export class KairoMusicClient {
     requestedBy: string,
   ): Promise<ParseResult> {
     return this.engine.parse({ input, guildId, requestedBy });
+  }
+
+  canPlay(track: Track): boolean {
+    return this.engine.canPlay(track);
+  }
+
+  enqueue(
+    guildId: string,
+    track: Track,
+    enqueuedBy: string,
+  ): Promise<QueueSnapshot> {
+    return this.engine.enqueue({ guildId, track, enqueuedBy });
+  }
+
+  connectVoice(target: VoiceTarget): Promise<PlaybackSnapshot> {
+    return this.engine.connectVoice(target);
+  }
+
+  getPlayback(guildId: string): PlaybackSnapshot {
+    return this.engine.getPlayback(guildId);
+  }
+
+  getQueue(guildId: string): QueueSnapshot {
+    return this.engine.getQueue(guildId);
+  }
+
+  pause(guildId: string): Promise<PlaybackSnapshot> {
+    return this.engine.pause(guildId);
+  }
+
+  resume(guildId: string): Promise<PlaybackSnapshot> {
+    return this.engine.resume(guildId);
+  }
+
+  skip(guildId: string): Promise<QueueSnapshot> {
+    return this.engine.skip(guildId);
+  }
+
+  stop(guildId: string): Promise<QueueSnapshot> {
+    return this.engine.stop(guildId);
   }
 }

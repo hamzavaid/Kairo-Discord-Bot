@@ -7,6 +7,7 @@ describe('bot music adapter', () => {
     const parse = vi.fn().mockResolvedValue({ kind: 'search', candidates: [] });
     const engine = {
       parse,
+      canPlay: vi.fn(),
       matchCandidates: vi.fn(),
       enqueue: vi.fn(),
       enqueueMany: vi.fn(),

@@ -39,6 +39,10 @@ export class StreamResolver {
       throw new MusicError('INVALID_QUERY', 'Stream timeout must be positive.');
   }
 
+  canResolve(track: Track): boolean {
+    return this.providers.some((provider) => provider.canStream(track));
+  }
+
   async resolve(track: Track, signal: AbortSignal): Promise<AudioSource> {
     if (signal.aborted)
       throw new MusicError(

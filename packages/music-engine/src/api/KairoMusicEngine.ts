@@ -72,6 +72,7 @@ export interface EngineOptions {
 
 export interface KairoMusicEngine {
   parse(request: ParseRequest): Promise<ParseResult>;
+  canPlay(track: import('../domain/Track.js').Track): boolean;
   matchCandidates(request: MatchRequest): MatchResult;
   enqueue(request: EnqueueRequest): Promise<QueueSnapshot>;
   enqueueMany(request: EnqueueManyRequest): Promise<QueueSnapshot>;
@@ -286,6 +287,9 @@ export function createKairoMusicEngine(
   }
 
   return {
+    canPlay(track) {
+      return resolver.canResolve(track);
+    },
     enqueue(request) {
       return enqueueMany({
         guildId: request.guildId,
