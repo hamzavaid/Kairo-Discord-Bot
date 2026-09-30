@@ -13,8 +13,7 @@ import {
 } from './config/music.js';
 import { AuditLog } from './commands/AuditLog.js';
 import { createCommandRegistry } from './commands/registry.js';
-import { InteractionRouter } from './commands/InteractionRouter.js';
-import { toCommandRequest } from './commands/discordAdapter.js';
+import { executeSlashCommand } from './commands/slashCommandHandler.js';
 import { registerCommands } from './commands/registerCommands.js';
 import { VoiceIdleManager } from './voice/VoiceIdleManager.js';
 
@@ -83,13 +82,6 @@ const registry = createCommandRegistry(
       .catch(() => logger.error({ guildId }, 'Voice idle check failed'));
   },
 );
-const router = new InteractionRouter(
-  registry,
-  audit,
-  developerIds,
-  (error, context) =>
-    logger.error({ err: error, ...context }, 'Command execution failed'),
-);
 const rest = new REST({ version: '10' }).setToken(environment.DISCORD_TOKEN);
 
 client.on(Events.VoiceStateUpdate, (oldState, newState) => {
@@ -138,7 +130,17 @@ client.once(Events.ClientReady, async () => {
 });
 client.on(Events.InteractionCreate, (interaction) => {
   if (!interaction.isChatInputCommand()) return;
-  void router.execute(toCommandRequest(interaction)).catch((error: unknown) => {
+
+  const command = registry.get(interaction.commandName);
+
+  void executeSlashCommand(
+    interaction,
+    command,
+    audit,
+    developerIds,
+    (error, context) =>
+      logger.error({ err: error, ...context }, 'Command execution failed'),
+  ).catch((error: unknown) => {
     logger.error(
       { err: error, command: interaction.commandName },
       'Command response failed',

@@ -1,38 +1,108 @@
-import { ContainerBuilder, MessageFlags, TextDisplayBuilder } from 'discord.js';
+import {
+  ContainerBuilder,
+  MessageFlags,
+  TextDisplayBuilder,
+  type ChatInputCommandInteraction,
+} from 'discord.js';
 import { describe, expect, it, vi } from 'vitest';
-import { toCommandRequest } from '../apps/bot/src/commands/discordAdapter.js';
+import { executeSlashCommand } from '../apps/bot/src/commands/slashCommandHandler.js';
 import { registerCommands } from '../apps/bot/src/commands/registerCommands.js';
 import { AuditLog } from '../apps/bot/src/commands/AuditLog.js';
 import { createCommandRegistry } from '../apps/bot/src/commands/registry.js';
+import type {
+  CommandContext,
+  CommandDefinition,
+} from '../apps/bot/src/commands/types.js';
 import type { MusicService } from '../apps/bot/src/services/MusicService.js';
 
-describe('Discord interaction adapter and registration', () => {
-  it('extracts voice, query, latency and reply behavior from a chat command', async () => {
-    const deferReply = vi.fn(async () => {});
-    const editReply = vi.fn(async () => {});
-    const reply = vi.fn(async () => {});
-    const interaction = {
+function createInteraction(options: {
+  commandName: string;
+  query?: string | null;
+  audioQuality?: string | null;
+  canManageGuild?: boolean;
+}) {
+  let deferred = false;
+  let replied = false;
+
+  const deferReply = vi.fn(async () => {
+    deferred = true;
+  });
+  const editReply = vi.fn(async () => {});
+  const reply = vi.fn(async () => {
+    replied = true;
+  });
+  const followUp = vi.fn(async () => {});
+
+  const interaction = {
+    commandName: options.commandName,
+    user: { id: 'user' },
+    guildId: 'guild',
+    guild: {
+      voiceAdapterCreator: vi.fn(),
+      voiceStates: { cache: new Map([['user', { channelId: 'voice' }]]) },
+    },
+    client: { ws: { ping: 42 } },
+    createdTimestamp: 100,
+    options: {
+      getString: vi.fn((name: string) => {
+        if (name === 'query') return options.query ?? null;
+        if (name === 'audio_quality') return options.audioQuality ?? null;
+        return null;
+      }),
+      getInteger: vi.fn(() => null),
+    },
+    memberPermissions: {
+      has: vi.fn(() => options.canManageGuild ?? false),
+    },
+    get deferred() {
+      return deferred;
+    },
+    get replied() {
+      return replied;
+    },
+    deferReply,
+    editReply,
+    reply,
+    followUp,
+  } as unknown as ChatInputCommandInteraction;
+
+  return {
+    interaction,
+    deferReply,
+    editReply,
+    reply,
+    followUp,
+  };
+}
+
+describe('Discord slash command handling and registration', () => {
+  it('extracts voice, query, latency and deferred reply behavior from a chat command', async () => {
+    let captured: CommandContext | undefined;
+    const command: CommandDefinition = {
+      name: 'play',
+      description: 'Play',
+      usage: '/play <query>',
+      category: 'Music',
+      defer: true,
+      async execute(context) {
+        captured = context;
+        return { content: 'queued' };
+      },
+    };
+
+    const built = createInteraction({
       commandName: 'play',
-      user: { id: 'user' },
-      guildId: 'guild',
-      guild: {
-        voiceAdapterCreator: vi.fn(),
-        voiceStates: { cache: new Map([['user', { channelId: 'voice' }]]) },
-      },
-      client: { ws: { ping: 42 } },
-      createdTimestamp: 100,
-      options: {
-        getString: vi.fn(() => 'song'),
-        getInteger: vi.fn(() => null),
-      },
-      deferred: false,
-      replied: false,
-      deferReply,
-      editReply,
-      reply,
-    } as unknown as Parameters<typeof toCommandRequest>[0];
-    const command = toCommandRequest(interaction);
-    expect(command).toMatchObject({
+      query: 'song',
+    });
+
+    await executeSlashCommand(
+      built.interaction,
+      command,
+      new AuditLog(),
+      new Set(),
+    );
+
+    expect(captured).toMatchObject({
       name: 'play',
       userId: 'user',
       guildId: 'guild',
@@ -41,39 +111,41 @@ describe('Discord interaction adapter and registration', () => {
       websocketPing: 42,
       voiceTarget: { guildId: 'guild', channelId: 'voice' },
     });
-    await command.defer();
-    await command.respond({ content: 'queued' });
-    expect(deferReply).toHaveBeenCalledOnce();
-    expect(editReply).toHaveBeenCalledWith({
+    expect(built.deferReply).toHaveBeenCalledOnce();
+    expect(built.editReply).toHaveBeenCalledWith({
       content: 'queued',
       allowedMentions: { parse: [] },
     });
-    expect(reply).not.toHaveBeenCalled();
+    expect(built.reply).not.toHaveBeenCalled();
   });
 
   it('sends Components V2 replies without a content field', async () => {
-    const reply = vi.fn(async () => {});
-    const interaction = {
-      commandName: 'help',
-      user: { id: 'user' },
-      guildId: 'guild',
-      guild: { voiceStates: { cache: new Map() } },
-      client: { ws: { ping: 0 } },
-      createdTimestamp: 0,
-      options: { getString: () => null, getInteger: () => null },
-      deferred: false,
-      replied: false,
-      reply,
-    } as unknown as Parameters<typeof toCommandRequest>[0];
     const container = new ContainerBuilder().addTextDisplayComponents(
       new TextDisplayBuilder().setContent('Help'),
     );
-    await toCommandRequest(interaction).respond({
-      components: [container],
-      ephemeral: true,
-      flags: MessageFlags.IsComponentsV2,
-    });
-    expect(reply).toHaveBeenCalledWith({
+    const command: CommandDefinition = {
+      name: 'help',
+      description: 'Help',
+      usage: '/help',
+      category: 'Utility',
+      async execute() {
+        return {
+          components: [container],
+          ephemeral: true,
+          flags: MessageFlags.IsComponentsV2,
+        };
+      },
+    };
+    const built = createInteraction({ commandName: 'help' });
+
+    await executeSlashCommand(
+      built.interaction,
+      command,
+      new AuditLog(),
+      new Set(),
+    );
+
+    expect(built.reply).toHaveBeenCalledWith({
       components: [container],
       flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
       allowedMentions: { parse: [] },
@@ -99,21 +171,32 @@ describe('Discord interaction adapter and registration', () => {
     ).not.toHaveBeenCalled();
   });
 
-  it('reads the audio quality option from a settings interaction', () => {
-    const interaction = {
-      commandName: 'settings',
-      user: { id: 'user' },
-      guildId: 'guild',
-      guild: { voiceStates: { cache: new Map() } },
-      client: { ws: { ping: 0 } },
-      createdTimestamp: 0,
-      options: {
-        getString: (name: string) => (name === 'audio_quality' ? 'best' : null),
-        getInteger: () => null,
+  it('reads the audio quality option and Manage Guild permission from a settings interaction', async () => {
+    let captured: CommandContext | undefined;
+    const command: CommandDefinition = {
+      name: 'settings',
+      description: 'Settings',
+      usage: '/settings',
+      category: 'Utility',
+      async execute(context) {
+        captured = context;
+        return { content: 'ok' };
       },
-      memberPermissions: { has: () => true },
-    } as unknown as Parameters<typeof toCommandRequest>[0];
-    expect(toCommandRequest(interaction)).toMatchObject({
+    };
+    const built = createInteraction({
+      commandName: 'settings',
+      audioQuality: 'best',
+      canManageGuild: true,
+    });
+
+    await executeSlashCommand(
+      built.interaction,
+      command,
+      new AuditLog(),
+      new Set(),
+    );
+
+    expect(captured).toMatchObject({
       name: 'settings',
       audioQuality: 'best',
       canManageGuild: true,

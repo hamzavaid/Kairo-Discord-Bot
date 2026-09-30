@@ -3,9 +3,6 @@ import {
   MessageFlags,
   SeparatorBuilder,
   TextDisplayBuilder,
-  ActionRowBuilder,
-  StringSelectMenuBuilder,
-  StringSelectMenuOptionBuilder
 } from 'discord.js';
 import type { ApplicationCommandRegistry } from '../registry.js';
 import type { CommandContext, CommandDefinition } from '../types.js';

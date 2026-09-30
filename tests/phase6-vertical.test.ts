@@ -1,11 +1,12 @@
 import { EventEmitter } from 'node:events';
+import type { ChatInputCommandInteraction } from 'discord.js';
 import { describe, expect, it, vi } from 'vitest';
 import { createKairoMusicEngine } from '@kairo/music-engine';
 import { KairoMusicClient } from '../apps/bot/src/services/KairoMusicClient.js';
 import { MusicService } from '../apps/bot/src/services/MusicService.js';
 import { AuditLog } from '../apps/bot/src/commands/AuditLog.js';
 import { createCommandRegistry } from '../apps/bot/src/commands/registry.js';
-import { InteractionRouter } from '../apps/bot/src/commands/InteractionRouter.js';
+import { executeSlashCommand } from '../apps/bot/src/commands/slashCommandHandler.js';
 
 class Player extends EventEmitter {
   state = { status: 'idle' };
@@ -34,6 +35,59 @@ class Player extends EventEmitter {
   }
 }
 
+function createInteraction(
+  name: string,
+  options: { query?: string; voiceChannelId?: string } = {},
+) {
+  let deferred = false;
+  let replied = false;
+  const deferReply = vi.fn(async () => {
+    deferred = true;
+  });
+  const editReply = vi.fn(async () => {});
+  const reply = vi.fn(async () => {
+    replied = true;
+  });
+  const followUp = vi.fn(async () => {});
+  const voiceChannelId = options.voiceChannelId;
+
+  const interaction = {
+    commandName: name,
+    user: { id: 'user' },
+    guildId: 'guild',
+    guild: {
+      voiceAdapterCreator: (() => ({})) as never,
+      voiceStates: {
+        cache: new Map(
+          voiceChannelId
+            ? [['user', { channelId: voiceChannelId }]]
+            : [],
+        ),
+      },
+    },
+    client: { ws: { ping: 10 } },
+    createdTimestamp: Date.now(),
+    options: {
+      getString: (key: string) =>
+        key === 'query' ? (options.query ?? null) : null,
+      getInteger: () => null,
+    },
+    memberPermissions: { has: () => false },
+    get deferred() {
+      return deferred;
+    },
+    get replied() {
+      return replied;
+    },
+    deferReply,
+    editReply,
+    reply,
+    followUp,
+  } as unknown as ChatInputCommandInteraction;
+
+  return { interaction, deferReply, editReply, reply };
+}
+
 describe('Phase 6 offline Discord-to-playback slice', () => {
   it('routes a fixture /play to the public engine and starts playback', async () => {
     const connection = Object.assign(new EventEmitter(), {
@@ -60,68 +114,60 @@ describe('Phase 6 offline Discord-to-playback slice', () => {
     });
     const music = new MusicService(new KairoMusicClient(engine));
     const audit = new AuditLog();
-    const router = new InteractionRouter(
-      createCommandRegistry(music, audit),
-      audit,
-      new Set(),
-    );
-    const respond = vi.fn(async () => {});
+    const registry = createCommandRegistry(music, audit);
+
     try {
-      await router.execute({
-        name: 'play',
-        guildId: 'guild',
-        userId: 'user',
-        voiceChannelId: 'voice',
-        voiceTarget: {
-          guildId: 'guild',
-          channelId: 'voice',
-          adapterCreator: (() => ({})) as never,
-        },
+      const play = createInteraction('play', {
         query: 'https://fixture.kairo.invalid/tracks/demo',
-        createdTimestamp: Date.now(),
-        defer: async () => {},
-        respond,
+        voiceChannelId: 'voice',
       });
+      await executeSlashCommand(
+        play.interaction,
+        registry.get('play'),
+        audit,
+        new Set(),
+      );
+
       await vi.waitFor(() =>
         expect(engine.getPlayback('guild').state).toBe('PLAYING'),
       );
       expect(engine.getQueue('guild').current?.track.title).toBe('Demo');
-      expect(respond).toHaveBeenCalledWith({ content: 'Playing: Demo' });
+      expect(play.editReply).toHaveBeenCalledWith(
+        expect.objectContaining({ content: 'Playing: Demo' }),
+      );
       expect(audit.list(1, 10)[0]?.success).toBe(true);
-      await router.execute({
-        name: 'pause',
-        guildId: 'guild',
-        userId: 'user',
-        voiceChannelId: 'voice',
-        createdTimestamp: Date.now(),
-        defer: async () => {},
-        respond,
-      });
+
+      const pause = createInteraction('pause', { voiceChannelId: 'voice' });
+      await executeSlashCommand(
+        pause.interaction,
+        registry.get('pause'),
+        audit,
+        new Set(),
+      );
       expect(engine.getPlayback('guild').state).toBe('PAUSED');
-      await router.execute({
-        name: 'resume',
-        guildId: 'guild',
-        userId: 'user',
-        voiceChannelId: 'voice',
-        createdTimestamp: Date.now(),
-        defer: async () => {},
-        respond,
-      });
+
+      const resume = createInteraction('resume', { voiceChannelId: 'voice' });
+      await executeSlashCommand(
+        resume.interaction,
+        registry.get('resume'),
+        audit,
+        new Set(),
+      );
       expect(engine.getPlayback('guild').state).toBe('PLAYING');
-      await router.execute({
-        name: 'disconnect',
-        guildId: 'guild',
-        userId: 'user',
-        createdTimestamp: Date.now(),
-        defer: async () => {},
-        respond,
-      });
+
+      const disconnect = createInteraction('disconnect');
+      await executeSlashCommand(
+        disconnect.interaction,
+        registry.get('disconnect'),
+        audit,
+        new Set(),
+      );
       expect(engine.getPlayback('guild').state).toBe('DISCONNECTED');
       expect(engine.getQueue('guild').current).toBeUndefined();
       expect(connection.destroy).toHaveBeenCalled();
-      expect(respond).toHaveBeenLastCalledWith({
-        content: 'Disconnected from voice.',
-      });
+      expect(disconnect.reply).toHaveBeenCalledWith(
+        expect.objectContaining({ content: 'Disconnected from voice.' }),
+      );
     } finally {
       await engine.shutdown();
     }
