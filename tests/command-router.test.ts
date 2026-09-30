@@ -1,7 +1,10 @@
 import { MessageFlags, type ChatInputCommandInteraction } from 'discord.js';
 import { describe, expect, it, vi } from 'vitest';
 import { MusicError } from '@kairo/music-engine';
-import type { AudioQuality, GuildSettingsRepository } from '../packages/data/src/GuildSettingsRepository.js';
+import type {
+  AudioQuality,
+  GuildSettingsRepository,
+} from '../packages/data/src/GuildSettingsRepository.js';
 import { AuditLog } from '../apps/bot/src/commands/AuditLog.js';
 import {
   createSlashCommandHandler,

@@ -80,19 +80,14 @@ function createHandler() {
   } as unknown as MusicService;
 
   const settings: GuildSettingsRepository = {
-    get: vi.fn(
-      async (guildId: string): Promise<GuildSettings> => ({
-        guildId,
-        idleDisconnectSeconds: 60,
-        audioQuality: 'high',
-      }),
-    ),
+    get: vi.fn(async (guildId: string): Promise<GuildSettings> => ({
+      guildId,
+      idleDisconnectSeconds: 60,
+      audioQuality: 'high',
+    })),
 
     setIdleDisconnectSeconds: vi.fn(
-      async (
-        guildId: string,
-        seconds: number,
-      ): Promise<GuildSettings> => ({
+      async (guildId: string, seconds: number): Promise<GuildSettings> => ({
         guildId,
         idleDisconnectSeconds: seconds,
         audioQuality: 'high',

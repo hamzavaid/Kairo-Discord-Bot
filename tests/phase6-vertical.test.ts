@@ -1,9 +1,6 @@
 import { EventEmitter } from 'node:events';
 import type { ChatInputCommandInteraction } from 'discord.js';
-import type {
-  AudioQuality,
-  GuildSettingsRepository,
-} from '../packages/data/src/GuildSettingsRepository.js';
+import type { GuildSettingsRepository } from '../packages/data/src/GuildSettingsRepository.js';
 import { describe, expect, it, vi } from 'vitest';
 import { createKairoMusicEngine } from '@kairo/music-engine';
 import { AuditLog } from '../apps/bot/src/commands/AuditLog.js';
