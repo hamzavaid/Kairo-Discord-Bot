@@ -20,7 +20,7 @@ const inspectionSchema = z.object({
         ext: z.string().nullable().optional(),
         acodec: z.string().nullable().optional(),
         vcodec: z.string().nullable().optional(),
-        abr: z.number().positive().nullable().optional(),
+        abr: z.number().nonnegative().nullable().optional(),
         has_drm: z.boolean().optional(),
       }),
     )
@@ -95,7 +95,7 @@ export class YtDlpStreamProvider implements StreamProvider {
   constructor(options: YtDlpOptions = {}) {
     this.spawn = options.spawn ?? nodeSpawn;
     this.executable = options.executable ?? 'yt-dlp';
-    this.maxMetadataBytes = options.maxMetadataBytes ?? 1_048_576;
+    this.maxMetadataBytes = options.maxMetadataBytes ?? 8_388_608;
   }
 
   canStream(track: Track): boolean {

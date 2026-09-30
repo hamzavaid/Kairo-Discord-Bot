@@ -5,6 +5,7 @@ import { createLogger, parseEnvironment } from '@kairo/shared';
 import { connectGuildSettings } from '@kairo/data';
 import { KairoMusicClient } from './services/KairoMusicClient.js';
 import { MusicService } from './services/MusicService.js';
+import { logPlaybackEvents } from './services/logPlaybackEvents.js';
 import {
   addApplicationOwner,
   createBotMusicOptions,
@@ -32,6 +33,7 @@ const engine = createKairoMusicEngine({
   audioQualityForGuild: async (guildId) =>
     (await database.repository.get(guildId)).audioQuality,
 });
+logPlaybackEvents(engine, logger);
 const music = new MusicService(new KairoMusicClient(engine));
 const audit = new AuditLog();
 const developerIds = new Set(developerIdsFromEnvironment(environment));

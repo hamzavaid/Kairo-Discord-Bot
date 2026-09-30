@@ -120,7 +120,7 @@ describe('yt-dlp audio stream provider', () => {
                     ext: 'mhtml',
                     acodec: null,
                     vcodec: 'none',
-                    abr: null,
+                    abr: 0,
                   },
                 ],
               }),
@@ -158,6 +158,37 @@ describe('yt-dlp audio stream provider', () => {
     controller.abort();
     source.dispose?.();
     expect(media.kill).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts ordinary video metadata larger than one MiB while retaining a size bound', async () => {
+    const payload = Buffer.from(
+      JSON.stringify({ formats, description: 'x'.repeat(1_300_000) }),
+    );
+    expect(payload.length).toBeGreaterThan(1_048_576);
+    const spawn = vi.fn((_exe: string, args: string[]) => {
+      const process = child();
+      if (args.includes('--dump-single-json'))
+        queueMicrotask(() => {
+          process.stdout.emit('data', payload);
+          process.emit('close', 0);
+        });
+      return process as never;
+    });
+    const provider = new YtDlpStreamProvider({ spawn: spawn as never });
+    const source = await provider.resolveAudio(
+      track,
+      new AbortController().signal,
+    );
+    expect(source.inputType).toBe('webm/opus');
+    source.dispose?.();
+
+    const bounded = new YtDlpStreamProvider({
+      spawn: spawn as never,
+      maxMetadataBytes: 1_000_000,
+    });
+    await expect(
+      bounded.resolveAudio(track, new AbortController().signal),
+    ).rejects.toMatchObject({ code: 'STREAM_UNAVAILABLE' });
   });
 
   it('kills inspection on cancellation and rejects malformed IDs', async () => {
