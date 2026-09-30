@@ -83,7 +83,13 @@ const registry = createCommandRegistry(
       .catch(() => logger.error({ guildId }, 'Voice idle check failed'));
   },
 );
-const router = new InteractionRouter(registry, audit, developerIds);
+const router = new InteractionRouter(
+  registry,
+  audit,
+  developerIds,
+  (error, context) =>
+    logger.error({ err: error, ...context }, 'Command execution failed'),
+);
 const rest = new REST({ version: '10' }).setToken(environment.DISCORD_TOKEN);
 
 client.on(Events.VoiceStateUpdate, (oldState, newState) => {
@@ -132,11 +138,16 @@ client.once(Events.ClientReady, async () => {
 });
 client.on(Events.InteractionCreate, (interaction) => {
   if (!interaction.isChatInputCommand()) return;
-  void router.execute(toCommandRequest(interaction)).catch(() => {
-    logger.error('Command response failed');
+  void router.execute(toCommandRequest(interaction)).catch((error: unknown) => {
+    logger.error(
+      { err: error, command: interaction.commandName },
+      'Command response failed',
+    );
   });
 });
-client.on(Events.Error, () => logger.error('Discord client error'));
+client.on(Events.Error, (error) =>
+  logger.error({ err: error }, 'Discord client error'),
+);
 
 let closing = false;
 async function close(): Promise<void> {

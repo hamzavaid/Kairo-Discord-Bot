@@ -13,8 +13,6 @@ export function toCommandRequest(
   const channelId =
     interaction.guild?.voiceStates.cache.get(interaction.user.id)?.channelId ??
     undefined;
-  let deferred = interaction.deferred;
-  let replied = interaction.replied;
   return {
     name: interaction.commandName,
     userId: interaction.user.id,
@@ -51,26 +49,37 @@ export function toCommandRequest(
     createdTimestamp: interaction.createdTimestamp,
     websocketPing: interaction.client.ws.ping,
     async defer() {
-      if (!deferred && !replied) {
+      if (!interaction.deferred && !interaction.replied) {
         await interaction.deferReply();
-        deferred = true;
       }
     },
-    async respond(content, ephemeral) {
-      const options = { content, allowedMentions: { parse: [] as [] } };
-      if (deferred) {
-        await interaction.editReply(options);
-      } else if (replied) {
+    async respond(message) {
+      const options = {
+        ...(message.content === undefined ? {} : { content: message.content }),
+        ...(message.components === undefined
+          ? {}
+          : { components: message.components }),
+        allowedMentions: { parse: [] as [] },
+      };
+      const flags =
+        (message.flags ?? 0) | (message.ephemeral ? MessageFlags.Ephemeral : 0);
+      if (interaction.deferred) {
+        await interaction.editReply({
+          ...options,
+          ...(message.flags === MessageFlags.IsComponentsV2
+            ? { flags: MessageFlags.IsComponentsV2 }
+            : {}),
+        });
+      } else if (interaction.replied) {
         await interaction.followUp({
           ...options,
-          ...(ephemeral ? { flags: MessageFlags.Ephemeral } : {}),
+          ...(flags ? { flags } : {}),
         });
       } else {
         await interaction.reply({
           ...options,
-          ...(ephemeral ? { flags: MessageFlags.Ephemeral } : {}),
+          ...(flags ? { flags } : {}),
         });
-        replied = true;
       }
     },
   };

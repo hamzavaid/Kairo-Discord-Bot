@@ -86,7 +86,7 @@ describe('Phase 6 offline Discord-to-playback slice', () => {
         expect(engine.getPlayback('guild').state).toBe('PLAYING'),
       );
       expect(engine.getQueue('guild').current?.track.title).toBe('Demo');
-      expect(respond).toHaveBeenCalledWith('Playing: Demo', false);
+      expect(respond).toHaveBeenCalledWith({ content: 'Playing: Demo' });
       expect(audit.list(1, 10)[0]?.success).toBe(true);
       await router.execute({
         name: 'pause',
@@ -119,10 +119,9 @@ describe('Phase 6 offline Discord-to-playback slice', () => {
       expect(engine.getPlayback('guild').state).toBe('DISCONNECTED');
       expect(engine.getQueue('guild').current).toBeUndefined();
       expect(connection.destroy).toHaveBeenCalled();
-      expect(respond).toHaveBeenLastCalledWith(
-        'Disconnected from voice.',
-        false,
-      );
+      expect(respond).toHaveBeenLastCalledWith({
+        content: 'Disconnected from voice.',
+      });
     } finally {
       await engine.shutdown();
     }

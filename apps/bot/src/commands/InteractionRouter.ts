@@ -36,37 +36,108 @@ export class InteractionRouter {
     private readonly registry: ApplicationCommandRegistry,
     private readonly audit: AuditLog,
     private readonly developerIds: ReadonlySet<string>,
+    private readonly reportError?: (
+      error: unknown,
+      context: {
+        command: string;
+        guildId?: string;
+        userId: string;
+        code: string;
+      },
+    ) => void,
   ) {}
 
   async execute(request: CommandRequest): Promise<void> {
     const started = Date.now();
+
     let success = false;
     let errorCode: string | undefined;
+
+    let reply;
+
     try {
       const command = this.registry.get(request.name);
-      if (!command) throw new CommandError('MISSING_QUERY', 'Unknown command.');
-      const isDeveloper = this.developerIds.has(request.userId);
-      if (command.developerOnly && !isDeveloper)
+
+      if (!command) {
+        throw new CommandError(
+          'MISSING_QUERY',
+          'Unknown command.',
+        );
+      }
+
+      const isDeveloper =
+        this.developerIds.has(request.userId);
+
+      if (command.developerOnly && !isDeveloper) {
         throw new CommandError(
           'UNAUTHORIZED',
           'You are not authorized to use this command.',
         );
-      if (command.defer) await request.defer();
-      const reply = await command.execute({ ...request, isDeveloper });
-      await request.respond(reply.content, reply.ephemeral ?? false);
-      success = true;
+      }
+
+      if (command.defer) {
+        await request.defer();
+      }
+
+      reply = await command.execute({
+        ...request,
+        isDeveloper,
+      });
     } catch (error) {
       const safe = safeFailure(error);
+
       errorCode = safe.code;
-      await request.respond(safe.message, true);
+
+      try {
+        this.reportError?.(error, {
+          command: request.name,
+          ...(request.guildId
+            ? { guildId: request.guildId }
+            : {}),
+          userId: request.userId,
+          code: safe.code,
+        });
+      } catch {
+        // Logging must never prevent response handling.
+      }
+
+      reply = {
+        content: safe.message,
+        ephemeral: true,
+      };
+    }
+
+    try {
+      await request.respond(reply);
+      success = errorCode === undefined;
+    } catch (error) {
+      errorCode ??= 'INTERACTION_RESPONSE_ERROR';
+
+      try {
+        this.reportError?.(error, {
+          command: request.name,
+          ...(request.guildId
+            ? { guildId: request.guildId }
+            : {}),
+          userId: request.userId,
+          code: errorCode,
+        });
+      } catch {
+        // Do not attempt another interaction response here.
+      }
     } finally {
       this.audit.record({
         command: request.name,
-        ...(request.guildId ? { guildId: request.guildId } : {}),
+        ...(request.guildId
+          ? { guildId: request.guildId }
+          : {}),
         userId: request.userId,
         timestamp: new Date(started).toISOString(),
         success,
-        durationMs: Math.max(0, Date.now() - started),
+        durationMs: Math.max(
+          0,
+          Date.now() - started,
+        ),
         ...(errorCode ? { errorCode } : {}),
       });
     }

@@ -1,4 +1,5 @@
 import type { VoiceTarget } from '@kairo/music-engine';
+import type { InteractionReplyOptions, MessageFlags } from 'discord.js';
 
 export interface CommandRequest {
   name: string;
@@ -13,8 +14,9 @@ export interface CommandRequest {
   canManageGuild?: boolean;
   createdTimestamp: number;
   websocketPing?: number;
+  interactionid?: number;
   defer(): Promise<void>;
-  respond(content: string, ephemeral: boolean): Promise<void>;
+  respond(reply: CommandReply): Promise<void>;
 }
 
 export interface CommandContext extends CommandRequest {
@@ -22,8 +24,10 @@ export interface CommandContext extends CommandRequest {
 }
 
 export interface CommandReply {
-  content: string;
+  content?: string;
+  components?: InteractionReplyOptions['components'];
   ephemeral?: boolean;
+  flags?: MessageFlags;
 }
 
 export interface CommandDefinition {

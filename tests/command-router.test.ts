@@ -1,9 +1,13 @@
+import { MessageFlags } from 'discord.js';
 import { describe, expect, it, vi } from 'vitest';
 import { MusicError } from '@kairo/music-engine';
 import { AuditLog } from '../apps/bot/src/commands/AuditLog.js';
 import { createCommandRegistry } from '../apps/bot/src/commands/registry.js';
 import { InteractionRouter } from '../apps/bot/src/commands/InteractionRouter.js';
-import type { CommandRequest } from '../apps/bot/src/commands/types.js';
+import type {
+  CommandReply,
+  CommandRequest,
+} from '../apps/bot/src/commands/types.js';
 import type { MusicService } from '../apps/bot/src/services/MusicService.js';
 import type { AudioQuality } from '../packages/data/src/GuildSettingsRepository.js';
 
@@ -88,8 +92,8 @@ function setup() {
     createdTimestamp: Date.now() - 20,
     websocketPing: 10,
     defer: vi.fn(async () => {}),
-    respond: vi.fn(async (content: string) => {
-      responses.push(content);
+    respond: vi.fn(async (reply: CommandReply) => {
+      responses.push(reply.content ?? JSON.stringify(reply.components));
     }),
     ...extra,
   });
@@ -123,6 +127,14 @@ describe('Phase 6 command routing and audits', () => {
     ]);
     expect(registry.registrationData()).toHaveLength(12);
     await router.execute(request('help'));
+    const helpReply = request('help');
+    await router.execute(helpReply);
+    expect(helpReply.respond).toHaveBeenCalledWith(
+      expect.objectContaining({
+        flags: MessageFlags.IsComponentsV2,
+        ephemeral: true,
+      }),
+    );
     expect(responses[0]).toContain('/play <query>');
     expect(responses[0]).toContain('/ping');
     expect(responses[0]).not.toContain('/auditlog');
@@ -140,8 +152,7 @@ describe('Phase 6 command routing and audits', () => {
       voiceTarget: command.voiceTarget,
     });
     expect(command.respond).toHaveBeenCalledWith(
-      expect.stringContaining('Song'),
-      false,
+      expect.objectContaining({ content: expect.stringContaining('Song') }),
     );
     expect(audit.list(1, 10)[0]).toMatchObject({
       command: 'play',
@@ -272,5 +283,28 @@ describe('Phase 6 command routing and audits', () => {
       errorCode: 'INTERNAL_ERROR',
     });
     expect(JSON.stringify(audit.list(1, 10))).not.toContain('sensitive');
+  });
+
+  it('reports the original command error to the console hook while replying safely', async () => {
+    const { music, registry, audit, request } = setup();
+    const reportError = vi.fn();
+    const router = new InteractionRouter(
+      registry,
+      audit,
+      new Set(),
+      reportError,
+    );
+    const failure = new Error('component layout failed');
+    music.info.mockRejectedValueOnce(failure);
+    const command = request('info');
+    await router.execute(command);
+    expect(reportError).toHaveBeenCalledWith(
+      failure,
+      expect.objectContaining({ command: 'info', code: 'INTERNAL_ERROR' }),
+    );
+    expect(command.respond).toHaveBeenCalledWith({
+      content: 'The command could not be completed.',
+      ephemeral: true,
+    });
   });
 });

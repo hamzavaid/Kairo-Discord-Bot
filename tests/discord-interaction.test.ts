@@ -1,3 +1,4 @@
+import { ContainerBuilder, MessageFlags, TextDisplayBuilder } from 'discord.js';
 import { describe, expect, it, vi } from 'vitest';
 import { toCommandRequest } from '../apps/bot/src/commands/discordAdapter.js';
 import { registerCommands } from '../apps/bot/src/commands/registerCommands.js';
@@ -41,13 +42,42 @@ describe('Discord interaction adapter and registration', () => {
       voiceTarget: { guildId: 'guild', channelId: 'voice' },
     });
     await command.defer();
-    await command.respond('queued', false);
+    await command.respond({ content: 'queued' });
     expect(deferReply).toHaveBeenCalledOnce();
     expect(editReply).toHaveBeenCalledWith({
       content: 'queued',
       allowedMentions: { parse: [] },
     });
     expect(reply).not.toHaveBeenCalled();
+  });
+
+  it('sends Components V2 replies without a content field', async () => {
+    const reply = vi.fn(async () => {});
+    const interaction = {
+      commandName: 'help',
+      user: { id: 'user' },
+      guildId: 'guild',
+      guild: { voiceStates: { cache: new Map() } },
+      client: { ws: { ping: 0 } },
+      createdTimestamp: 0,
+      options: { getString: () => null, getInteger: () => null },
+      deferred: false,
+      replied: false,
+      reply,
+    } as unknown as Parameters<typeof toCommandRequest>[0];
+    const container = new ContainerBuilder().addTextDisplayComponents(
+      new TextDisplayBuilder().setContent('Help'),
+    );
+    await toCommandRequest(interaction).respond({
+      components: [container],
+      ephemeral: true,
+      flags: MessageFlags.IsComponentsV2,
+    });
+    expect(reply).toHaveBeenCalledWith({
+      components: [container],
+      flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+      allowedMentions: { parse: [] },
+    });
   });
 
   it('registers command definitions without invoking their handlers', async () => {
