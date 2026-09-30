@@ -1,18 +1,12 @@
-import {
-  ContainerBuilder,
-  MessageFlags,
-  TextDisplayBuilder,
-  type ChatInputCommandInteraction,
-} from 'discord.js';
-import { describe, expect, it, vi } from 'vitest';
-import { executeSlashCommand } from '../apps/bot/src/commands/slashCommandHandler.js';
-import { registerCommands } from '../apps/bot/src/commands/registerCommands.js';
-import { AuditLog } from '../apps/bot/src/commands/AuditLog.js';
-import { createCommandRegistry } from '../apps/bot/src/commands/registry.js';
+import { MessageFlags, type ChatInputCommandInteraction } from 'discord.js';
 import type {
-  CommandContext,
-  CommandDefinition,
-} from '../apps/bot/src/commands/types.js';
+  AudioQuality,
+  GuildSettings,
+  GuildSettingsRepository,
+} from '../packages/data/src/GuildSettingsRepository.js';
+import { describe, expect, it, vi } from 'vitest';
+import { AuditLog } from '../apps/bot/src/commands/AuditLog.js';
+import { createSlashCommandHandler } from '../apps/bot/src/commands/slashCommandHandler.js';
 import type { MusicService } from '../apps/bot/src/services/MusicService.js';
 
 function createInteraction(options: {
@@ -42,7 +36,7 @@ function createInteraction(options: {
       voiceStates: { cache: new Map([['user', { channelId: 'voice' }]]) },
     },
     client: { ws: { ping: 42 } },
-    createdTimestamp: 100,
+    createdTimestamp: Date.now() - 10,
     options: {
       getString: vi.fn((name: string) => {
         if (name === 'query') return options.query ?? null;
@@ -66,140 +60,129 @@ function createInteraction(options: {
     followUp,
   } as unknown as ChatInputCommandInteraction;
 
-  return {
-    interaction,
-    deferReply,
-    editReply,
-    reply,
-    followUp,
+  return { interaction, deferReply, editReply, reply, followUp };
+}
+
+function createHandler() {
+  const music = {
+    play: vi.fn().mockResolvedValue({
+      track: { title: 'Song' },
+      position: 0,
+    }),
+    info: vi.fn(),
+    pause: vi.fn(),
+    resume: vi.fn(),
+    skip: vi.fn(),
+    stop: vi.fn(),
+    disconnect: vi.fn(),
+    queue: vi.fn(() => ({ current: undefined, upcoming: [] })),
+    assertVoiceChannel: vi.fn(),
+  } as unknown as MusicService;
+
+  const settings: GuildSettingsRepository = {
+    get: vi.fn(
+      async (guildId: string): Promise<GuildSettings> => ({
+        guildId,
+        idleDisconnectSeconds: 60,
+        audioQuality: 'high',
+      }),
+    ),
+
+    setIdleDisconnectSeconds: vi.fn(
+      async (
+        guildId: string,
+        seconds: number,
+      ): Promise<GuildSettings> => ({
+        guildId,
+        idleDisconnectSeconds: seconds,
+        audioQuality: 'high',
+      }),
+    ),
+
+    setAudioQuality: vi.fn(
+      async (
+        guildId: string,
+        audioQuality: AudioQuality,
+      ): Promise<GuildSettings> => ({
+        guildId,
+        idleDisconnectSeconds: 60,
+        audioQuality,
+      }),
+    ),
   };
+
+  const handler = createSlashCommandHandler({
+    music,
+    audit: new AuditLog(),
+    settings,
+    developerIds: new Set(),
+  });
+
+  return { handler, music, settings };
 }
 
 describe('Discord slash command handling and registration', () => {
-  it('extracts voice, query, latency and deferred reply behavior from a chat command', async () => {
-    let captured: CommandContext | undefined;
-    const command: CommandDefinition = {
-      name: 'play',
-      description: 'Play',
-      usage: '/play <query>',
-      category: 'Music',
-      defer: true,
-      async execute(context) {
-        captured = context;
-        return { content: 'queued' };
-      },
-    };
+  it('passes Discord interaction data directly to the play command', async () => {
+    const { handler, music } = createHandler();
+    const built = createInteraction({ commandName: 'play', query: 'song' });
 
-    const built = createInteraction({
-      commandName: 'play',
-      query: 'song',
-    });
+    await handler.execute(built.interaction);
 
-    await executeSlashCommand(
-      built.interaction,
-      command,
-      new AuditLog(),
-      new Set(),
-    );
-
-    expect(captured).toMatchObject({
-      name: 'play',
-      userId: 'user',
-      guildId: 'guild',
-      voiceChannelId: 'voice',
-      query: 'song',
-      websocketPing: 42,
-      voiceTarget: { guildId: 'guild', channelId: 'voice' },
-    });
     expect(built.deferReply).toHaveBeenCalledOnce();
-    expect(built.editReply).toHaveBeenCalledWith({
-      content: 'queued',
-      allowedMentions: { parse: [] },
-    });
-    expect(built.reply).not.toHaveBeenCalled();
+    expect(music.play).toHaveBeenCalledWith(
+      expect.objectContaining({
+        guildId: 'guild',
+        userId: 'user',
+        query: 'song',
+        voiceTarget: expect.objectContaining({
+          guildId: 'guild',
+          channelId: 'voice',
+        }),
+      }),
+    );
+    expect(built.editReply).toHaveBeenCalledWith({ content: 'Playing: Song' });
   });
 
-  it('sends Components V2 replies without a content field', async () => {
-    const container = new ContainerBuilder().addTextDisplayComponents(
-      new TextDisplayBuilder().setContent('Help'),
-    );
-    const command: CommandDefinition = {
-      name: 'help',
-      description: 'Help',
-      usage: '/help',
-      category: 'Utility',
-      async execute() {
-        return {
-          components: [container],
-          ephemeral: true,
-          flags: MessageFlags.IsComponentsV2,
-        };
-      },
-    };
+  it('sends the help command as an ephemeral Components V2 reply', async () => {
+    const { handler } = createHandler();
     const built = createInteraction({ commandName: 'help' });
 
-    await executeSlashCommand(
-      built.interaction,
-      command,
-      new AuditLog(),
-      new Set(),
-    );
+    await handler.execute(built.interaction);
 
-    expect(built.reply).toHaveBeenCalledWith({
-      components: [container],
-      flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
-      allowedMentions: { parse: [] },
-    });
+    expect(built.reply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        components: expect.any(Array),
+        flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+      }),
+    );
   });
 
-  it('registers command definitions without invoking their handlers', async () => {
+  it('registers command data without invoking command execute methods', async () => {
+    const { handler, music } = createHandler();
     const rest = { put: vi.fn(async () => ({})) };
-    const music = { play: vi.fn() } as unknown as MusicService;
-    const registry = createCommandRegistry(music, new AuditLog());
-    await registerCommands(
-      registry,
-      rest,
-      '123456789012345678',
-      '123456789012345679',
-    );
+
+    await handler.register(rest, '123456789012345678', '123456789012345679');
+
     expect(rest.put).toHaveBeenCalledWith(
       expect.stringContaining('/guilds/123456789012345679/commands'),
-      { body: registry.registrationData() },
+      { body: handler.registrationData() },
     );
-    expect(
-      (music as unknown as { play: ReturnType<typeof vi.fn> }).play,
-    ).not.toHaveBeenCalled();
+    expect(music.play).not.toHaveBeenCalled();
   });
 
-  it('reads the audio quality option and Manage Guild permission from a settings interaction', async () => {
-    let captured: CommandContext | undefined;
-    const command: CommandDefinition = {
-      name: 'settings',
-      description: 'Settings',
-      usage: '/settings',
-      category: 'Utility',
-      async execute(context) {
-        captured = context;
-        return { content: 'ok' };
-      },
-    };
+  it('reads settings options and Manage Guild permission in the command file', async () => {
+    const { handler, settings } = createHandler();
     const built = createInteraction({
       commandName: 'settings',
       audioQuality: 'best',
       canManageGuild: true,
     });
 
-    await executeSlashCommand(
-      built.interaction,
-      command,
-      new AuditLog(),
-      new Set(),
-    );
+    await handler.execute(built.interaction);
 
-    expect(captured).toMatchObject({
-      name: 'settings',
-      audioQuality: 'best',
-      canManageGuild: true,
-    });
+    expect(settings.setAudioQuality).toHaveBeenCalledWith('guild', 'best');
+    expect(built.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ flags: MessageFlags.Ephemeral }),
+    );
   });
 });

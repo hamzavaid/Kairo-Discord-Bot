@@ -1,20 +1,18 @@
 import { existsSync } from 'node:fs';
-import { Client, GatewayIntentBits, Events, REST } from 'discord.js';
+import { Client, Events, GatewayIntentBits, REST } from 'discord.js';
+import { connectGuildSettings } from '@kairo/data';
 import { createKairoMusicEngine } from '@kairo/music-engine';
 import { createLogger, parseEnvironment } from '@kairo/shared';
-import { connectGuildSettings } from '@kairo/data';
-import { KairoMusicClient } from './services/KairoMusicClient.js';
-import { MusicService } from './services/MusicService.js';
-import { logPlaybackEvents } from './services/logPlaybackEvents.js';
+import { AuditLog } from './commands/AuditLog.js';
+import { createSlashCommandHandler } from './commands/slashCommandHandler.js';
 import {
   addApplicationOwner,
   createBotMusicOptions,
   developerIdsFromEnvironment,
 } from './config/music.js';
-import { AuditLog } from './commands/AuditLog.js';
-import { createCommandRegistry } from './commands/registry.js';
-import { executeSlashCommand } from './commands/slashCommandHandler.js';
-import { registerCommands } from './commands/registerCommands.js';
+import { KairoMusicClient } from './services/KairoMusicClient.js';
+import { logPlaybackEvents } from './services/logPlaybackEvents.js';
+import { MusicService } from './services/MusicService.js';
 import { VoiceIdleManager } from './voice/VoiceIdleManager.js';
 
 if (existsSync('.env')) process.loadEnvFile('.env');
@@ -26,6 +24,7 @@ if (
 ) {
   throw new Error('KAIRO_FIXTURE_AUDIO_PATH does not exist.');
 }
+
 const database = await connectGuildSettings(environment.MONGODB_URI);
 const engine = createKairoMusicEngine({
   ...createBotMusicOptions(environment),
@@ -33,12 +32,14 @@ const engine = createKairoMusicEngine({
     (await database.repository.get(guildId)).audioQuality,
 });
 logPlaybackEvents(engine, logger);
+
 const music = new MusicService(new KairoMusicClient(engine));
 const audit = new AuditLog();
 const developerIds = new Set(developerIdsFromEnvironment(environment));
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
 });
+
 const idle = new VoiceIdleManager(
   database.repository,
   (guildId) => {
@@ -67,21 +68,24 @@ const idle = new VoiceIdleManager(
     }
   },
 );
-const registry = createCommandRegistry(
+
+const refreshIdle = async (guildId: string): Promise<void> => {
+  await idle
+    .refresh(guildId)
+    .catch(() => logger.error({ guildId }, 'Voice idle check failed'));
+};
+
+const commandHandler = createSlashCommandHandler({
   music,
   audit,
-  database.repository,
-  async (guildId) => {
-    await idle
-      .refresh(guildId)
-      .catch(() => logger.error({ guildId }, 'Voice idle check failed'));
-  },
-  async (guildId) => {
-    await idle
-      .refresh(guildId)
-      .catch(() => logger.error({ guildId }, 'Voice idle check failed'));
-  },
-);
+  settings: database.repository,
+  developerIds,
+  onSettingsChanged: refreshIdle,
+  onVoiceActivity: refreshIdle,
+  reportError: (error, context) =>
+    logger.error({ err: error, ...context }, 'Command execution failed'),
+});
+
 const rest = new REST({ version: '10' }).setToken(environment.DISCORD_TOKEN);
 
 client.on(Events.VoiceStateUpdate, (oldState, newState) => {
@@ -100,13 +104,12 @@ client.on(Events.VoiceStateUpdate, (oldState, newState) => {
       );
     return;
   }
-  void idle
-    .refresh(guildId)
-    .catch(() => logger.error({ guildId }, 'Voice idle check failed'));
+  void refreshIdle(guildId);
 });
 
 client.once(Events.ClientReady, async () => {
   logger.info({ clientId: client.user?.id }, 'Kairo ready');
+
   try {
     if (!client.application) throw new Error('Application unavailable');
     const application = await client.application.fetch();
@@ -116,37 +119,33 @@ client.once(Events.ClientReady, async () => {
       'Application owner lookup failed; configured developer IDs remain active',
     );
   }
+
   try {
-    await registerCommands(
-      registry,
+    await commandHandler.register(
       rest,
       environment.DISCORD_CLIENT_ID,
       environment.DISCORD_DEV_GUILD_ID,
     );
-    logger.info({ count: registry.names().length }, 'Commands registered');
+    logger.info(
+      { count: commandHandler.names().length },
+      'Commands registered',
+    );
   } catch {
     logger.error('Command registration failed');
   }
 });
+
 client.on(Events.InteractionCreate, (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  const command = registry.get(interaction.commandName);
-
-  void executeSlashCommand(
-    interaction,
-    command,
-    audit,
-    developerIds,
-    (error, context) =>
-      logger.error({ err: error, ...context }, 'Command execution failed'),
-  ).catch((error: unknown) => {
+  void commandHandler.execute(interaction).catch((error: unknown) => {
     logger.error(
       { err: error, command: interaction.commandName },
       'Command response failed',
     );
   });
 });
+
 client.on(Events.Error, (error) =>
   logger.error({ err: error }, 'Discord client error'),
 );
@@ -160,6 +159,7 @@ async function close(): Promise<void> {
   client.destroy();
   await database.close();
 }
+
 process.once('SIGINT', () => void close());
 process.once('SIGTERM', () => void close());
 

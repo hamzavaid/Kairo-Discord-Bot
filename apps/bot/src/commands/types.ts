@@ -1,45 +1,40 @@
-import type { VoiceTarget } from '@kairo/music-engine';
-import type { InteractionReplyOptions, MessageFlags } from 'discord.js';
+import type { GuildSettingsRepository } from '@kairo/data';
+import type {
+  ChatInputCommandInteraction,
+  RESTPostAPIChatInputApplicationCommandsJSONBody,
+} from 'discord.js';
+import type { MusicService } from '../services/MusicService.js';
+import type { AuditLog } from './AuditLog.js';
 
-export interface CommandRequest {
-  name: string;
-  userId: string;
-  guildId?: string;
-  voiceChannelId?: string | undefined;
-  voiceTarget?: VoiceTarget;
-  query?: string;
-  page?: number;
-  timeoutSeconds?: number;
-  audioQuality?: 'low' | 'medium' | 'high' | 'best';
-  canManageGuild?: boolean;
-  createdTimestamp: number;
-  websocketPing?: number;
-  interactionid?: number;
-  defer(): Promise<void>;
-  respond(reply: CommandReply): Promise<void>;
+export type CommandCategory = 'Music' | 'Utility' | 'Developer';
+
+export interface CommandServices {
+  music: MusicService;
+  audit: AuditLog;
+  settings: GuildSettingsRepository;
+  onSettingsChanged?: (guildId: string) => Promise<void>;
+  onVoiceActivity?: (guildId: string) => Promise<void>;
 }
 
-export interface CommandContext extends CommandRequest {
+export interface CommandExecutionContext extends CommandServices {
   isDeveloper: boolean;
+  commands: ReadonlyMap<string, SlashCommand>;
 }
 
-export interface CommandReply {
-  content?: string;
-  components?: InteractionReplyOptions['components'];
-  ephemeral?: boolean;
-  flags?: MessageFlags;
+export interface SlashCommandData {
+  readonly name: string;
+  readonly description: string;
+
+  toJSON(): RESTPostAPIChatInputApplicationCommandsJSONBody;
 }
 
-export interface CommandDefinition {
-  name: string;
-  description: string;
+export interface SlashCommand {
+  data: SlashCommandData;
   usage: string;
-  category: 'Music' | 'Utility' | 'Developer';
-  queryOption?: boolean;
-  pageOption?: boolean;
-  timeoutOption?: boolean;
-  audioQualityOption?: boolean;
-  defer?: boolean;
+  category: CommandCategory;
   developerOnly?: boolean;
-  execute(context: CommandContext): Promise<CommandReply>;
+  execute(
+    interaction: ChatInputCommandInteraction,
+    context: CommandExecutionContext,
+  ): Promise<void>;
 }

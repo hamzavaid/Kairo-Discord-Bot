@@ -1,11 +1,13 @@
 import { MessageFlags, type ChatInputCommandInteraction } from 'discord.js';
 import { describe, expect, it, vi } from 'vitest';
 import { MusicError } from '@kairo/music-engine';
+import type { AudioQuality, GuildSettingsRepository } from '../packages/data/src/GuildSettingsRepository.js';
 import { AuditLog } from '../apps/bot/src/commands/AuditLog.js';
-import { createCommandRegistry } from '../apps/bot/src/commands/registry.js';
-import { executeSlashCommand } from '../apps/bot/src/commands/slashCommandHandler.js';
+import {
+  createSlashCommandHandler,
+  type ErrorReporter,
+} from '../apps/bot/src/commands/slashCommandHandler.js';
 import type { MusicService } from '../apps/bot/src/services/MusicService.js';
-import type { AudioQuality } from '../packages/data/src/GuildSettingsRepository.js';
 
 interface InteractionOptions {
   userId?: string;
@@ -48,9 +50,7 @@ function createInteraction(name: string, options: InteractionOptions = {}) {
             voiceAdapterCreator: vi.fn(),
             voiceStates: {
               cache: new Map(
-                voiceChannelId
-                  ? [[userId, { channelId: voiceChannelId }]]
-                  : [],
+                voiceChannelId ? [[userId, { channelId: voiceChannelId }]] : [],
               ),
             },
           },
@@ -83,16 +83,10 @@ function createInteraction(name: string, options: InteractionOptions = {}) {
     followUp,
   } as unknown as ChatInputCommandInteraction;
 
-  return {
-    interaction,
-    reply,
-    deferReply,
-    editReply,
-    followUp,
-  };
+  return { interaction, reply, deferReply, editReply, followUp };
 }
 
-function setup() {
+function setup(reportError?: ErrorReporter) {
   const music = {
     play: vi.fn().mockResolvedValue({
       track: { title: 'Song', artists: [{ name: 'Artist' }] },
@@ -122,15 +116,13 @@ function setup() {
     string,
     { timeout: number; quality: AudioQuality }
   >();
-  const settingsRepository = {
+  const settingsRepository: GuildSettingsRepository = {
     get: vi.fn(async (guildId: string) => ({
       guildId,
       idleDisconnectSeconds: settings.get(guildId)?.timeout ?? 60,
       audioQuality: settings.get(guildId)?.quality ?? 'high',
     })),
     setIdleDisconnectSeconds: vi.fn(async (guildId: string, value: number) => {
-      if (!Number.isInteger(value) || value < 0 || value > 3600)
-        throw new RangeError('Invalid timeout');
       settings.set(guildId, {
         timeout: value,
         quality: settings.get(guildId)?.quality ?? 'high',
@@ -154,12 +146,14 @@ function setup() {
     }),
   };
 
-  const registry = createCommandRegistry(
-    music as unknown as MusicService,
-    audit,
-    settingsRepository,
-  );
   const developerIds = new Set(['developer']);
+  const handler = createSlashCommandHandler({
+    music: music as unknown as MusicService,
+    audit,
+    settings: settingsRepository,
+    developerIds,
+    ...(reportError ? { reportError } : {}),
+  });
 
   const run = async (name: string, options: InteractionOptions = {}) => {
     const built = createInteraction(name, {
@@ -167,38 +161,31 @@ function setup() {
       query: 'song',
       ...options,
     });
-    await executeSlashCommand(
-      built.interaction,
-      registry.get(name),
-      audit,
-      developerIds,
-    );
+    await handler.execute(built.interaction);
     return built;
   };
 
-  return {
-    music,
-    audit,
-    registry,
-    run,
-    settingsRepository,
-    developerIds,
-  };
+  return { music, audit, handler, run, settingsRepository };
 }
 
 function lastPayload(mock: ReturnType<typeof vi.fn>): unknown {
   return mock.mock.calls.at(-1)?.[0];
 }
 
-function responseText(result: Awaited<ReturnType<ReturnType<typeof setup>['run']>>) {
-  const payload = lastPayload(result.editReply) ?? lastPayload(result.reply);
+function responseText(
+  result: Awaited<ReturnType<ReturnType<typeof setup>['run']>>,
+) {
+  const payload =
+    lastPayload(result.editReply) ??
+    lastPayload(result.reply) ??
+    lastPayload(result.followUp);
   return JSON.stringify(payload);
 }
 
-describe('Phase 6 command routing and audits', () => {
-  it('registers commands separately and generates help from the registry', async () => {
-    const { registry, run } = setup();
-    expect(registry.names()).toEqual([
+describe('slash command handler and audits', () => {
+  it('loads all commands and generates help from the handler collection', async () => {
+    const { handler, run } = setup();
+    expect(handler.names()).toEqual([
       'play',
       'pause',
       'resume',
@@ -212,7 +199,7 @@ describe('Phase 6 command routing and audits', () => {
       'info',
       'auditlog',
     ]);
-    expect(registry.registrationData()).toHaveLength(12);
+    expect(handler.registrationData()).toHaveLength(12);
 
     const result = await run('help');
     const payload = lastPayload(result.reply) as {
@@ -223,7 +210,6 @@ describe('Phase 6 command routing and audits', () => {
     expect(payload.flags).toBe(
       MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
     );
-
     const text = JSON.stringify(payload.components);
     expect(text).toContain('/play <query>');
     expect(text).toContain('/ping');
@@ -400,23 +386,13 @@ describe('Phase 6 command routing and audits', () => {
     expect(JSON.stringify(audit.list(1, 10))).not.toContain('sensitive');
   });
 
-  it('reports the original command error to the console hook while replying safely', async () => {
-    const { music, registry, audit, developerIds } = setup();
+  it('reports the original command error while replying safely', async () => {
     const reportError = vi.fn();
+    const { music, run } = setup(reportError);
     const failure = new Error('component layout failed');
     music.info.mockRejectedValueOnce(failure);
-    const result = createInteraction('info', {
-      voiceChannelId: 'voice',
-      query: 'song',
-    });
 
-    await executeSlashCommand(
-      result.interaction,
-      registry.get('info'),
-      audit,
-      developerIds,
-      reportError,
-    );
+    const result = await run('info');
 
     expect(reportError).toHaveBeenCalledWith(
       failure,

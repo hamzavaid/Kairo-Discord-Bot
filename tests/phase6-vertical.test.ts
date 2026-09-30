@@ -1,12 +1,15 @@
 import { EventEmitter } from 'node:events';
 import type { ChatInputCommandInteraction } from 'discord.js';
+import type {
+  AudioQuality,
+  GuildSettingsRepository,
+} from '../packages/data/src/GuildSettingsRepository.js';
 import { describe, expect, it, vi } from 'vitest';
 import { createKairoMusicEngine } from '@kairo/music-engine';
+import { AuditLog } from '../apps/bot/src/commands/AuditLog.js';
+import { createSlashCommandHandler } from '../apps/bot/src/commands/slashCommandHandler.js';
 import { KairoMusicClient } from '../apps/bot/src/services/KairoMusicClient.js';
 import { MusicService } from '../apps/bot/src/services/MusicService.js';
-import { AuditLog } from '../apps/bot/src/commands/AuditLog.js';
-import { createCommandRegistry } from '../apps/bot/src/commands/registry.js';
-import { executeSlashCommand } from '../apps/bot/src/commands/slashCommandHandler.js';
 
 class Player extends EventEmitter {
   state = { status: 'idle' };
@@ -59,9 +62,7 @@ function createInteraction(
       voiceAdapterCreator: (() => ({})) as never,
       voiceStates: {
         cache: new Map(
-          voiceChannelId
-            ? [['user', { channelId: voiceChannelId }]]
-            : [],
+          voiceChannelId ? [['user', { channelId: voiceChannelId }]] : [],
         ),
       },
     },
@@ -114,19 +115,36 @@ describe('Phase 6 offline Discord-to-playback slice', () => {
     });
     const music = new MusicService(new KairoMusicClient(engine));
     const audit = new AuditLog();
-    const registry = createCommandRegistry(music, audit);
+    const settings: GuildSettingsRepository = {
+      get: async (guildId) => ({
+        guildId,
+        idleDisconnectSeconds: 60,
+        audioQuality: 'high',
+      }),
+      setIdleDisconnectSeconds: async (guildId, seconds) => ({
+        guildId,
+        idleDisconnectSeconds: seconds,
+        audioQuality: 'high',
+      }),
+      setAudioQuality: async (guildId, audioQuality) => ({
+        guildId,
+        idleDisconnectSeconds: 60,
+        audioQuality,
+      }),
+    };
+    const handler = createSlashCommandHandler({
+      music,
+      audit,
+      settings,
+      developerIds: new Set(),
+    });
 
     try {
       const play = createInteraction('play', {
         query: 'https://fixture.kairo.invalid/tracks/demo',
         voiceChannelId: 'voice',
       });
-      await executeSlashCommand(
-        play.interaction,
-        registry.get('play'),
-        audit,
-        new Set(),
-      );
+      await handler.execute(play.interaction);
 
       await vi.waitFor(() =>
         expect(engine.getPlayback('guild').state).toBe('PLAYING'),
@@ -138,30 +156,15 @@ describe('Phase 6 offline Discord-to-playback slice', () => {
       expect(audit.list(1, 10)[0]?.success).toBe(true);
 
       const pause = createInteraction('pause', { voiceChannelId: 'voice' });
-      await executeSlashCommand(
-        pause.interaction,
-        registry.get('pause'),
-        audit,
-        new Set(),
-      );
+      await handler.execute(pause.interaction);
       expect(engine.getPlayback('guild').state).toBe('PAUSED');
 
       const resume = createInteraction('resume', { voiceChannelId: 'voice' });
-      await executeSlashCommand(
-        resume.interaction,
-        registry.get('resume'),
-        audit,
-        new Set(),
-      );
+      await handler.execute(resume.interaction);
       expect(engine.getPlayback('guild').state).toBe('PLAYING');
 
       const disconnect = createInteraction('disconnect');
-      await executeSlashCommand(
-        disconnect.interaction,
-        registry.get('disconnect'),
-        audit,
-        new Set(),
-      );
+      await handler.execute(disconnect.interaction);
       expect(engine.getPlayback('guild').state).toBe('DISCONNECTED');
       expect(engine.getQueue('guild').current).toBeUndefined();
       expect(connection.destroy).toHaveBeenCalled();

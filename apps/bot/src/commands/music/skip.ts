@@ -1,16 +1,17 @@
-import type { MusicService } from '../../services/MusicService.js';
-import type { CommandDefinition } from '../types.js';
+import { SlashCommandBuilder } from 'discord.js';
 import { controlVoice } from '../guards.js';
+import type { SlashCommand } from '../types.js';
 
-export function createSkipCommand(music: MusicService): CommandDefinition {
-  return {
-    name: 'skip',
-    description: 'Skip the current song',
-    usage: '/skip',
-    category: 'Music',
-    async execute(context) {
-      await music.skip(controlVoice(context, music));
-      return { content: 'Skipped.' };
-    },
-  };
-}
+const command: SlashCommand = {
+  data: new SlashCommandBuilder()
+    .setName('skip')
+    .setDescription('Skip the current song'),
+  usage: '/skip',
+  category: 'Music',
+  async execute(interaction, context) {
+    await context.music.skip(controlVoice(interaction, context.music));
+    await interaction.reply({ content: 'Skipped.' });
+  },
+};
+
+export default command;

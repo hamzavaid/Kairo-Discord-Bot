@@ -1,39 +1,50 @@
-import type { MusicService } from '../../services/MusicService.js';
+import { SlashCommandBuilder } from 'discord.js';
 import { CommandError } from '../../errors.js';
-import type { CommandDefinition } from '../types.js';
-import { guild, query } from '../guards.js';
+import { guild, query, userVoiceChannel } from '../guards.js';
+import type { SlashCommand } from '../types.js';
 
-export function createPlayCommand(
-  music: MusicService,
-  onVoiceActivity?: (guildId: string) => Promise<void>,
-): CommandDefinition {
-  return {
-    name: 'play',
-    description: 'Play or queue a song',
-    usage: '/play <query>',
-    category: 'Music',
-    queryOption: true,
-    defer: true,
-    async execute(context) {
-      const guildId = guild(context);
-      if (!context.voiceChannelId || !context.voiceTarget)
-        throw new CommandError(
-          'USER_NOT_IN_VOICE',
-          'Join a voice channel first.',
-        );
-      const result = await music.play({
+const command: SlashCommand = {
+  data: new SlashCommandBuilder()
+    .setName('play')
+    .setDescription('Play or queue a song')
+    .addStringOption((option) =>
+      option
+        .setName('query')
+        .setDescription('Song name or supported track URL')
+        .setRequired(true),
+    ),
+  usage: '/play <query>',
+  category: 'Music',
+  async execute(interaction, context) {
+    await interaction.deferReply();
+
+    const guildId = guild(interaction);
+    const voiceChannelId = userVoiceChannel(interaction);
+    if (!voiceChannelId || !interaction.guild)
+      throw new CommandError(
+        'USER_NOT_IN_VOICE',
+        'Join a voice channel first.',
+      );
+
+    const result = await context.music.play({
+      guildId,
+      userId: interaction.user.id,
+      query: query(interaction),
+      voiceTarget: {
         guildId,
-        userId: context.userId,
-        query: query(context),
-        voiceTarget: context.voiceTarget,
-      });
-      await onVoiceActivity?.(guildId);
-      return {
-        content:
-          result.position === 0
-            ? `Playing: ${result.track.title}`
-            : `Queued #${result.position}: ${result.track.title}`,
-      };
-    },
-  };
-}
+        channelId: voiceChannelId,
+        adapterCreator: interaction.guild.voiceAdapterCreator,
+      },
+    });
+
+    await context.onVoiceActivity?.(guildId);
+    await interaction.editReply({
+      content:
+        result.position === 0
+          ? `Playing: ${result.track.title}`
+          : `Queued #${result.position}: ${result.track.title}`,
+    });
+  },
+};
+
+export default command;

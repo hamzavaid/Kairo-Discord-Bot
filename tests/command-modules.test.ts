@@ -1,39 +1,35 @@
 import { describe, expect, it } from 'vitest';
-import { createPlayCommand } from '../apps/bot/src/commands/music/play.js';
-import { createPauseCommand } from '../apps/bot/src/commands/music/pause.js';
-import { createResumeCommand } from '../apps/bot/src/commands/music/resume.js';
-import { createSkipCommand } from '../apps/bot/src/commands/music/skip.js';
-import { createStopCommand } from '../apps/bot/src/commands/music/stop.js';
-import { createDisconnectCommand } from '../apps/bot/src/commands/music/disconnect.js';
-import { createQueueCommand } from '../apps/bot/src/commands/music/queue.js';
-import { createPingCommand } from '../apps/bot/src/commands/utility/ping.js';
-import { createSettingsCommand } from '../apps/bot/src/commands/utility/settings.js';
-import { createHelpCommand } from '../apps/bot/src/commands/utility/help.js';
-import { createInfoCommand } from '../apps/bot/src/commands/utility/info.js';
-import { createAuditlogCommand } from '../apps/bot/src/commands/developer/auditlog.js';
-import { ApplicationCommandRegistry } from '../apps/bot/src/commands/registry.js';
-import { AuditLog } from '../apps/bot/src/commands/AuditLog.js';
-import type { MusicService } from '../apps/bot/src/services/MusicService.js';
+import auditlogCommand from '../apps/bot/src/commands/developer/auditlog.js';
+import disconnectCommand from '../apps/bot/src/commands/music/disconnect.js';
+import pauseCommand from '../apps/bot/src/commands/music/pause.js';
+import playCommand from '../apps/bot/src/commands/music/play.js';
+import queueCommand from '../apps/bot/src/commands/music/queue.js';
+import resumeCommand from '../apps/bot/src/commands/music/resume.js';
+import skipCommand from '../apps/bot/src/commands/music/skip.js';
+import stopCommand from '../apps/bot/src/commands/music/stop.js';
+import helpCommand from '../apps/bot/src/commands/utility/help.js';
+import infoCommand from '../apps/bot/src/commands/utility/info.js';
+import pingCommand from '../apps/bot/src/commands/utility/ping.js';
+import settingsCommand from '../apps/bot/src/commands/utility/settings.js';
+
+const commands = [
+  playCommand,
+  pauseCommand,
+  resumeCommand,
+  skipCommand,
+  stopCommand,
+  disconnectCommand,
+  queueCommand,
+  pingCommand,
+  settingsCommand,
+  helpCommand,
+  infoCommand,
+  auditlogCommand,
+];
 
 describe('individual command modules', () => {
-  it('exports one definition per command with distinct names and preserved registration options', () => {
-    const music = {} as MusicService;
-    const registry = new ApplicationCommandRegistry();
-    const commands = [
-      createPlayCommand(music),
-      createPauseCommand(music),
-      createResumeCommand(music),
-      createSkipCommand(music),
-      createStopCommand(music),
-      createDisconnectCommand(music),
-      createQueueCommand(music),
-      createPingCommand(),
-      createSettingsCommand(),
-      createHelpCommand(registry),
-      createInfoCommand(music),
-      createAuditlogCommand(new AuditLog()),
-    ];
-    expect(commands.map((command) => command.name)).toEqual([
+  it('exports guide-style data and execute properties for every command', () => {
+    expect(commands.map((command) => command.data.name)).toEqual([
       'play',
       'pause',
       'resume',
@@ -47,8 +43,16 @@ describe('individual command modules', () => {
       'info',
       'auditlog',
     ]);
-    for (const command of commands) registry.add(command);
-    const registration = registry.registrationData();
+
+    for (const command of commands) {
+      expect(command.data.description.length).toBeGreaterThan(0);
+      expect(typeof command.execute).toBe('function');
+    }
+  });
+
+  it('keeps command-specific registration options with each command', () => {
+    const registration = commands.map((command) => command.data.toJSON());
+
     expect(
       registration.find((command) => command.name === 'play')?.options?.[0]
         ?.name,

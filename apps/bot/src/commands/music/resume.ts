@@ -1,16 +1,17 @@
-import type { MusicService } from '../../services/MusicService.js';
-import type { CommandDefinition } from '../types.js';
+import { SlashCommandBuilder } from 'discord.js';
 import { controlVoice } from '../guards.js';
+import type { SlashCommand } from '../types.js';
 
-export function createResumeCommand(music: MusicService): CommandDefinition {
-  return {
-    name: 'resume',
-    description: 'Resume playback',
-    usage: '/resume',
-    category: 'Music',
-    async execute(context) {
-      await music.resume(controlVoice(context, music));
-      return { content: 'Playback resumed.' };
-    },
-  };
-}
+const command: SlashCommand = {
+  data: new SlashCommandBuilder()
+    .setName('resume')
+    .setDescription('Resume playback'),
+  usage: '/resume',
+  category: 'Music',
+  async execute(interaction, context) {
+    await context.music.resume(controlVoice(interaction, context.music));
+    await interaction.reply({ content: 'Playback resumed.' });
+  },
+};
+
+export default command;

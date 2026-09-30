@@ -2,54 +2,58 @@ import {
   ContainerBuilder,
   MessageFlags,
   SeparatorBuilder,
+  SlashCommandBuilder,
   TextDisplayBuilder,
 } from 'discord.js';
-import type { ApplicationCommandRegistry } from '../registry.js';
-import type { CommandContext, CommandDefinition } from '../types.js';
+import type {
+  CommandCategory,
+  CommandExecutionContext,
+  SlashCommand,
+} from '../types.js';
 
 function createContainer(
-  registry: ApplicationCommandRegistry,
-  categories: readonly ['Music', 'Utility', 'Developer'],
-  context: CommandContext,
+  commands: ReadonlyMap<string, SlashCommand>,
+  categories: readonly CommandCategory[],
+  isDeveloper: boolean,
 ): ContainerBuilder {
   const container = new ContainerBuilder();
+
   for (const [index, category] of categories.entries()) {
-    const entries = registry
-      .list()
-      .filter(
-        (item) =>
-          item.category === category &&
-          (!item.developerOnly || context.isDeveloper),
-      );
+    const entries = [...commands.values()].filter(
+      (item) =>
+        item.category === category && (!item.developerOnly || isDeveloper),
+    );
     const content =
       `## ${category}:\n` +
       entries
-        .map((item) => `**${item.usage}:** \n-# ${item.description}`)
+        .map((item) => `**${item.usage}:** \n-# ${item.data.description}`)
         .join('\n');
+
     container.addTextDisplayComponents(
       new TextDisplayBuilder().setContent(content),
     );
     if (index < categories.length - 1)
       container.addSeparatorComponents(new SeparatorBuilder().setDivider(true));
   }
+
   return container;
 }
 
-export function createHelpCommand(
-  registry: ApplicationCommandRegistry,
-): CommandDefinition {
-  return {
-    name: 'help',
-    description: 'List commands',
-    usage: '/help',
-    category: 'Utility',
-    async execute(context) {
-      const categories = ['Music', 'Utility', 'Developer'] as const;
-      return {
-        components: [createContainer(registry, categories, context)],
-        ephemeral: true,
-        flags: MessageFlags.IsComponentsV2,
-      };
-    },
-  };
-}
+const command: SlashCommand = {
+  data: new SlashCommandBuilder()
+    .setName('help')
+    .setDescription('List commands'),
+  usage: '/help',
+  category: 'Utility',
+  async execute(interaction, context: CommandExecutionContext) {
+    const categories = ['Music', 'Utility', 'Developer'] as const;
+    await interaction.reply({
+      components: [
+        createContainer(context.commands, categories, context.isDeveloper),
+      ],
+      flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+    });
+  },
+};
+
+export default command;
