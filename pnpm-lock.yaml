@@ -29,6 +29,9 @@ importers:
       eslint:
         specifier: ^9.39.5
         version: 9.39.5
+      mongoose:
+        specifier: 9.10.2
+        version: 9.10.2
       prettier:
         specifier: ^3.6.2
         version: 3.9.9
@@ -62,6 +65,9 @@ importers:
       mongoose:
         specifier: 9.10.2
         version: 9.10.2
+      zod:
+        specifier: 3.25.76
+        version: 3.25.76
 
   packages/games: {}
 
