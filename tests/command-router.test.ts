@@ -214,8 +214,17 @@ describe('slash command handler and audits', () => {
       MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
     );
     const text = JSON.stringify(payload.components);
-    expect(text).toContain('/play <query>');
-    expect(text).toContain('/ping');
+    expect(text).toContain('## Help Command');
+    expect(text).toContain('Choose a command category...');
+    expect(text).toContain('"label":"Music"');
+    expect(text).toContain('"label":"Utility"');
+
+    // Non-developers should not see the Developer category.
+    expect(text).not.toContain('"label":"Developer"');
+
+    // Commands are not shown until a category is selected.
+    expect(text).not.toContain('/play <query>');
+    expect(text).not.toContain('/ping');
     expect(text).not.toContain('/auditlog');
   });
 
