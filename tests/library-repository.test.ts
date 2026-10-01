@@ -109,3 +109,41 @@ describe('Mongo library persistence', () => {
     );
   });
 });
+
+it('rejects stale destructive confirmations without deleting new data', async () => {
+  const { connection } = libraryModel();
+  const repo = new MongoLibraryRepository(connection);
+  const first = await repo.create('alice', 'Mix');
+  await repo.delete('alice', 'Mix');
+  await repo.create('alice', 'Mix');
+  await expect(repo.delete('alice', 'Mix', first)).rejects.toMatchObject({
+    code: 'LIBRARY_CHANGED',
+  });
+  const liked = await repo.liked('alice');
+  await repo.like('alice', saveTrack(libraryTrack));
+  await expect(repo.clearLiked('alice', liked)).rejects.toMatchObject({
+    code: 'LIBRARY_CHANGED',
+  });
+  expect((await repo.liked('alice')).entries).toHaveLength(1);
+  const playlist = await repo.get('alice', 'Mix');
+  await repo.append('alice', 'Mix', [saveTrack(libraryTrack)]);
+  await expect(repo.clear('alice', 'Mix', playlist)).rejects.toMatchObject({
+    code: 'LIBRARY_CHANGED',
+  });
+  expect((await repo.get('alice', 'Mix')).entries).toHaveLength(1);
+});
+
+it('recovers a concurrent first-like upsert race from the owner unique index', async () => {
+  const { connection, model } = libraryModel();
+  const repo = new MongoLibraryRepository(connection);
+  await repo.liked('alice');
+  model.findOneAndUpdate.mockImplementationOnce(
+    () =>
+      ({
+        exec: async () => {
+          throw Object.assign(new Error('duplicate'), { code: 11000 });
+        },
+      }) as never,
+  );
+  expect((await repo.liked('alice')).ownerUserId).toBe('alice');
+});

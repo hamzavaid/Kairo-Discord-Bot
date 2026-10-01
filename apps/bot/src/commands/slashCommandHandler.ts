@@ -1,4 +1,5 @@
 import { MusicError } from '@kairo/music-engine';
+import { LibraryError } from '@kairo/data';
 import {
   Collection,
   MessageFlags,
@@ -24,6 +25,10 @@ import helpCommand from './utility/help.js';
 import infoCommand from './utility/info.js';
 import pingCommand from './utility/ping.js';
 import settingsCommand from './utility/settings.js';
+import playlistCommand from './library/playlist.js';
+import likedCommand from './library/liked.js';
+import likeCommand from './library/like.js';
+import dislikeCommand from './library/dislike.js';
 
 export type ErrorReporter = (
   error: unknown,
@@ -50,6 +55,8 @@ export interface CommandRegistrationTransport {
 }
 
 function safeFailure(error: unknown): { code: string; message: string } {
+  if (error instanceof LibraryError)
+    return { code: error.code, message: error.message };
   if (error instanceof CommandError)
     return { code: error.code, message: error.message };
 
@@ -64,6 +71,11 @@ function safeFailure(error: unknown): { code: string; message: string } {
       PROVIDER_TIMEOUT: 'The metadata provider timed out.',
       PROVIDER_UNAVAILABLE: 'The metadata provider is unavailable.',
       PROVIDER_PARSE_ERROR: 'The metadata provider returned invalid data.',
+      COLLECTION_UNSUPPORTED:
+        'Enter a supported YouTube playlist or Spotify playlist/album URL.',
+      COLLECTION_EMPTY: 'The collection has no importable tracks.',
+      COLLECTION_IMPORT_FAILED:
+        'The collection could not be imported. Check its availability and provider permissions.',
     };
 
     return {
@@ -120,6 +132,10 @@ const builtInCommands: readonly SlashCommand[] = [
   helpCommand,
   infoCommand,
   auditlogCommand,
+  playlistCommand,
+  likedCommand,
+  likeCommand,
+  dislikeCommand,
 ];
 
 export class SlashCommandHandler {
@@ -184,6 +200,7 @@ export class SlashCommandHandler {
         music: this.options.music,
         audit: this.options.audit,
         settings: this.options.settings,
+        ...(this.options.library ? { library: this.options.library } : {}),
         ...(this.options.onSettingsChanged
           ? { onSettingsChanged: this.options.onSettingsChanged }
           : {}),
@@ -192,6 +209,19 @@ export class SlashCommandHandler {
           : {}),
         isDeveloper,
         commands: this.commands,
+        reportComponentError: (error) => {
+          const safe = safeFailure(error);
+          this.report(error, commandName, guildId, userId, safe.code);
+          this.options.audit.record({
+            command: `${commandName}:component`,
+            ...(guildId ? { guildId } : {}),
+            userId,
+            timestamp: new Date().toISOString(),
+            success: false,
+            durationMs: 0,
+            errorCode: safe.code,
+          });
+        },
       };
 
       await command.execute(interaction, context);

@@ -74,14 +74,17 @@ export class LibraryService {
   list(owner: string) {
     return this.repository.list(owner);
   }
-  delete(owner: string, name: string) {
-    return this.repository.delete(owner, name);
+  delete(owner: string, name: string, expected?: LibraryCollection) {
+    return this.repository.delete(owner, name, expected);
   }
   rename(owner: string, name: string, newName: string) {
     return this.repository.rename(owner, name, newName);
   }
   remove(owner: string, name: string, position: number) {
     return this.repository.remove(owner, name, position);
+  }
+  clear(owner: string, name: string, expected?: LibraryCollection) {
+    return this.repository.clear(owner, name, expected);
   }
   move(owner: string, name: string, from: number, to: number) {
     return this.repository.move(owner, name, from, to);
@@ -173,8 +176,8 @@ export class LibraryService {
       target,
     );
   }
-  clearLiked(owner: string) {
-    return this.repository.clearLiked(owner);
+  clearLiked(owner: string, expected?: LibraryCollection) {
+    return this.repository.clearLiked(owner, expected);
   }
   private async resolve(owner: string, guildId: string, query?: string) {
     return query

@@ -15,7 +15,10 @@ const environmentSchema = z.object({
     .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace'])
     .default('info'),
   MUSIC_MAX_QUEUE_LENGTH: positiveInt(500),
-  MUSIC_MAX_COLLECTION_ITEMS: positiveInt(200),
+  MUSIC_MAX_COLLECTION_ITEMS: positiveInt(200).refine(
+    (value) => value <= 1000,
+    'Collection limit must be at most 1000',
+  ),
   MUSIC_IDLE_DISCONNECT_SECONDS: positiveInt(300),
   MUSIC_DEFAULT_VOLUME: z.coerce.number().min(0).max(1).default(0.75),
   MUSIC_MATCH_THRESHOLD: z.coerce.number().min(0).max(1).default(0.82),

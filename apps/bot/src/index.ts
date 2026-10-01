@@ -12,6 +12,7 @@ import {
 } from './config/music.js';
 import { KairoMusicClient } from './services/KairoMusicClient.js';
 import { logPlaybackEvents } from './services/logPlaybackEvents.js';
+import { LibraryService } from './services/LibraryService.js';
 import { MusicService } from './services/MusicService.js';
 import { VoiceIdleManager } from './voice/VoiceIdleManager.js';
 
@@ -25,7 +26,9 @@ if (
   throw new Error('KAIRO_FIXTURE_AUDIO_PATH does not exist.');
 }
 
-const database = await connectGuildSettings(environment.MONGODB_URI);
+const database = await connectGuildSettings(environment.MONGODB_URI, {
+  maxEntries: environment.MUSIC_MAX_COLLECTION_ITEMS,
+});
 const engine = createKairoMusicEngine({
   ...createBotMusicOptions(environment),
   audioQualityForGuild: async (guildId) =>
@@ -77,6 +80,7 @@ const refreshIdle = async (guildId: string): Promise<void> => {
 
 const commandHandler = createSlashCommandHandler({
   music,
+  library: new LibraryService(database.library, music),
   audit,
   settings: database.repository,
   developerIds,

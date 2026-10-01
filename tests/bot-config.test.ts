@@ -74,3 +74,14 @@ describe('Phase 6 bot music configuration', () => {
     });
   });
 });
+
+it('passes the bounded collection limit to the parser and rejects oversized limits', () => {
+  const environment = parseEnvironment({
+    ...base,
+    MUSIC_MAX_COLLECTION_ITEMS: '75',
+  });
+  expect(createBotMusicOptions(environment).maxCollectionItems).toBe(75);
+  expect(() =>
+    parseEnvironment({ ...base, MUSIC_MAX_COLLECTION_ITEMS: '1001' }),
+  ).toThrow();
+});

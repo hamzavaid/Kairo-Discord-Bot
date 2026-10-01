@@ -132,7 +132,11 @@ export interface LibraryRepository {
   create(owner: string, name: string): Promise<LibraryCollection>;
   get(owner: string, name: string): Promise<LibraryCollection>;
   list(owner: string): Promise<LibraryCollection[]>;
-  delete(owner: string, name: string): Promise<void>;
+  delete(
+    owner: string,
+    name: string,
+    expected?: Pick<LibraryCollection, 'id' | 'version'>,
+  ): Promise<void>;
   rename(
     owner: string,
     name: string,
@@ -155,14 +159,21 @@ export interface LibraryRepository {
     from: number,
     to: number,
   ): Promise<LibraryCollection>;
-  clear(owner: string, name: string): Promise<LibraryCollection>;
+  clear(
+    owner: string,
+    name: string,
+    expected?: Pick<LibraryCollection, 'id' | 'version'>,
+  ): Promise<LibraryCollection>;
   liked(owner: string): Promise<LibraryCollection>;
   like(
     owner: string,
     track: SavedTrack,
   ): Promise<{ added: boolean; collection: LibraryCollection }>;
   unlike(owner: string, identity: string): Promise<boolean>;
-  clearLiked(owner: string): Promise<void>;
+  clearLiked(
+    owner: string,
+    expected?: Pick<LibraryCollection, 'id' | 'version'>,
+  ): Promise<void>;
 }
 export function playlistName(value: string): {
   name: string;
@@ -306,16 +317,26 @@ export class MongoLibraryRepository implements LibraryRepository {
       .lean()
       .exec();
   }
-  async delete(owner: string, name: string): Promise<void> {
+  async delete(
+    owner: string,
+    name: string,
+    expected?: Pick<LibraryCollection, 'id' | 'version'>,
+  ): Promise<void> {
     const result = await this.model
       .deleteOne({
         ownerUserId: owner,
         normalizedName: playlistName(name).normalizedName,
         kind: 'playlist',
+        ...(expected ? { id: expected.id, version: expected.version } : {}),
       })
       .exec();
     if (!result.deletedCount)
-      throw new LibraryError('PLAYLIST_NOT_FOUND', 'Playlist not found.');
+      throw new LibraryError(
+        expected ? 'LIBRARY_CHANGED' : 'PLAYLIST_NOT_FOUND',
+        expected
+          ? 'The collection changed. Run the command again.'
+          : 'Playlist not found.',
+      );
   }
   private async mutate<T>(
     owner: string,
@@ -447,9 +468,14 @@ export class MongoLibraryRepository implements LibraryRepository {
       })
     ).collection;
   }
-  async clear(owner: string, name: string): Promise<LibraryCollection> {
+  async clear(
+    owner: string,
+    name: string,
+    expected?: Pick<LibraryCollection, 'id' | 'version'>,
+  ): Promise<LibraryCollection> {
     return (
       await this.mutate(owner, playlistName(name).normalizedName, (r) => {
+        this.checkExpected(r, expected);
         r.entries = [];
       })
     ).collection;
@@ -466,7 +492,13 @@ export class MongoLibraryRepository implements LibraryRepository {
           lean: true,
         },
       )
-      .exec();
+      .exec()
+      .catch(async (error: unknown) => {
+        // A concurrent first access may win the unique owner/name upsert.
+        if ((error as { code?: number })?.code === 11000)
+          return this.read(owner, likedKey);
+        throw error;
+      });
     if (!record)
       throw new LibraryError(
         'LIBRARY_UNAVAILABLE',
@@ -493,9 +525,26 @@ export class MongoLibraryRepository implements LibraryRepository {
       })
     ).value;
   }
-  async clearLiked(owner: string): Promise<void> {
+  private checkExpected(
+    record: LibraryCollection,
+    expected?: Pick<LibraryCollection, 'id' | 'version'>,
+  ): void {
+    if (
+      expected &&
+      (record.id !== expected.id || record.version !== expected.version)
+    )
+      throw new LibraryError(
+        'LIBRARY_CHANGED',
+        'The collection changed. Run the command again.',
+      );
+  }
+  async clearLiked(
+    owner: string,
+    expected?: Pick<LibraryCollection, 'id' | 'version'>,
+  ): Promise<void> {
     await this.liked(owner);
     await this.mutate(owner, likedKey, (r) => {
+      this.checkExpected(r, expected);
       r.entries = [];
     });
   }

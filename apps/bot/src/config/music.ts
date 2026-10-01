@@ -69,6 +69,7 @@ export function createBotMusicOptions(environment: Environment): EngineOptions {
         }
       : {}),
     maxQueueEntries: environment.MUSIC_MAX_QUEUE_LENGTH,
+    maxCollectionItems: environment.MUSIC_MAX_COLLECTION_ITEMS,
     streamTimeoutMs: environment.MUSIC_STREAM_TIMEOUT_MS,
     ffmpegPath: environment.FFMPEG_PATH,
   };

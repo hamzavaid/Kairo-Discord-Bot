@@ -105,6 +105,7 @@ const command: SlashCommand = {
   async execute(interaction, context: CommandExecutionContext) {
     const categories = [
       { name: 'Music', description: 'Playback, queue, and voice commands' },
+      { name: 'Library', description: 'Persistent playlists and Liked Songs' },
       { name: 'Utility', description: 'General Kairo utility commands' },
       { name: 'Developer', description: 'Developer-only commands' },
     ];

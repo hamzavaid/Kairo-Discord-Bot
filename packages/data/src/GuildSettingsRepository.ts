@@ -1,3 +1,7 @@
+import {
+  MongoLibraryRepository,
+  type LibraryRepository,
+} from './LibraryRepository.js';
 import mongoose, { type Connection, type Model } from 'mongoose';
 
 export const DEFAULT_IDLE_DISCONNECT_SECONDS = 60;
@@ -132,14 +136,27 @@ export class MongoGuildSettingsRepository implements GuildSettingsRepository {
 
 export async function connectGuildSettings(
   uri: string,
-): Promise<{ repository: GuildSettingsRepository; close(): Promise<void> }> {
+  options: { maxEntries?: number } = {},
+): Promise<{
+  repository: GuildSettingsRepository;
+  library: LibraryRepository;
+  close(): Promise<void>;
+}> {
   const connection = await mongoose
     .createConnection(uri, {
       serverSelectionTimeoutMS: 5_000,
       bufferCommands: false,
     })
     .asPromise();
+  const library = new MongoLibraryRepository(connection, options);
+  try {
+    await library.initialize();
+  } catch (error) {
+    await connection.close();
+    throw error;
+  }
   return {
+    library,
     repository: new MongoGuildSettingsRepository(connection),
     close: async () => {
       await connection.close();

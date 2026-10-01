@@ -26,7 +26,7 @@ describe.skipIf(!enabled)('isolated real MongoDB library persistence', () => {
         repo.append('alice', 'mix', [track]),
         repo.append('alice', 'mix', [track]),
       ]);
-      await repo.like('alice', track);
+      await Promise.all([repo.like('alice', track), repo.like('alice', track)]);
       const second = await mongoose
         .createConnection(uri, { dbName, serverSelectionTimeoutMS: 5000 })
         .asPromise();
