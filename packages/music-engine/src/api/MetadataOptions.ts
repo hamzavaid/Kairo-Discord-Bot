@@ -3,6 +3,11 @@ export type MetadataProviderId =
 export interface YoutubeSrOptions {
   search?: (query: string, options: { limit: number }) => Promise<unknown[]>;
   getVideo?: (url: string) => Promise<unknown>;
+  getPlaylist?: (
+    url: string,
+    limit: number,
+    signal?: AbortSignal,
+  ) => Promise<unknown>;
   timeoutMs?: number;
 }
 export interface YouTubeApiOptions {
@@ -10,7 +15,10 @@ export interface YouTubeApiOptions {
   fetcher?: typeof fetch;
   timeoutMs?: number;
   searchCacheMs?: number;
-  onQuotaUse?: (operation: 'search' | 'videos', units: number) => void;
+  onQuotaUse?: (
+    operation: 'search' | 'videos' | 'playlistItems',
+    units: number,
+  ) => void;
 }
 export interface SpotifyOptions {
   clientId: string;

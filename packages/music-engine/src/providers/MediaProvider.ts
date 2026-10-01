@@ -22,4 +22,19 @@ export interface MediaProvider {
     maxResults: number,
     signal?: AbortSignal,
   ): Promise<ProviderTrack[]>;
+  getCollection?(
+    input: Extract<ClassifiedInput, { kind: 'provider-collection' }>,
+    limit: number,
+    signal?: AbortSignal,
+  ): Promise<ProviderCollection>;
+}
+
+export interface ProviderCollection {
+  title: string;
+  tracks: ProviderTrack[];
+  total: number;
+  skipped: number;
+  failed: number;
+  truncated: boolean;
+  partial: boolean;
 }

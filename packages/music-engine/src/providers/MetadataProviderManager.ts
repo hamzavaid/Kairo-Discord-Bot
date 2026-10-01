@@ -2,7 +2,11 @@ import { MusicError } from '../api/errors.js';
 import type { MetadataProviderId } from '../api/MetadataOptions.js';
 import type { ClassifiedInput } from '../parser/QueryClassifier.js';
 import { validateProviderTrack } from '../parser/TrackNormalizer.js';
-import type { MediaProvider, ProviderTrack } from './MediaProvider.js';
+import type {
+  MediaProvider,
+  ProviderTrack,
+  ProviderCollection,
+} from './MediaProvider.js';
 import { ProviderRegistry } from './ProviderRegistry.js';
 
 export interface MetadataResponse<T> {
@@ -12,6 +16,56 @@ export interface MetadataResponse<T> {
 
 /** Owns selection and fallback. URL identity always wins over search preference. */
 export class MetadataProviderManager {
+  async collection(
+    input: Extract<ClassifiedInput, { kind: 'provider-collection' }>,
+    limit: number,
+    signal?: AbortSignal,
+  ): Promise<MetadataResponse<ProviderCollection>> {
+    const id =
+      input.providerId === 'youtube-sr' && this.selected === 'youtube-api'
+        ? 'youtube-api'
+        : input.providerId;
+    const provider = this.registry.getMetadataProvider(id);
+    if (!provider.getCollection)
+      throw new MusicError(
+        'COLLECTION_UNSUPPORTED',
+        'This collection provider is not supported.',
+      );
+    const timeout = new AbortController();
+    const timer = setTimeout(() => timeout.abort(), 20_000);
+    const combined = signal
+      ? AbortSignal.any([signal, timeout.signal])
+      : timeout.signal;
+    try {
+      return {
+        provider,
+        value: await this.safe(
+          () =>
+            provider.getCollection!(
+              { ...input, providerId: id },
+              limit,
+              combined,
+            ),
+          combined,
+        ),
+      };
+    } catch (error) {
+      if (signal?.aborted)
+        throw new MusicError(
+          'PARSER_CANCELLED',
+          'The music request was cancelled.',
+        );
+      if (timeout.signal.aborted)
+        throw new MusicError(
+          'PROVIDER_TIMEOUT',
+          'The collection provider timed out.',
+          true,
+        );
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
   constructor(
     private readonly registry: ProviderRegistry,
     private readonly selected: MetadataProviderId,

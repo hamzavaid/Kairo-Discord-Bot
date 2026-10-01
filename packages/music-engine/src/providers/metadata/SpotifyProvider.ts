@@ -2,7 +2,11 @@ import { z } from 'zod';
 import { MusicError } from '../../api/errors.js';
 import type { SpotifyOptions } from '../../api/MetadataOptions.js';
 import type { ClassifiedInput } from '../../parser/QueryClassifier.js';
-import type { MediaProvider, ProviderTrack } from '../MediaProvider.js';
+import type {
+  MediaProvider,
+  ProviderTrack,
+  ProviderCollection,
+} from '../MediaProvider.js';
 import { TimedCache } from '../musicbrainz/TimedCache.js';
 import { boundedJson } from './transport.js';
 
@@ -151,5 +155,113 @@ export class SpotifyProvider implements MediaProvider {
     const tracks = parsed.data.tracks.items.map((item) => this.normalize(item));
     this.cache.set(key, tracks, this.options.searchCacheMs ?? 300_000);
     return tracks;
+  }
+
+  async getCollection(
+    input: Extract<ClassifiedInput, { kind: 'provider-collection' }>,
+    limit: number,
+    signal?: AbortSignal,
+  ): Promise<ProviderCollection> {
+    const base = `${input.resourceType === 'album' ? 'albums' : 'playlists'}/${input.sourceId}`;
+    const metadata = z
+      .object({ name: z.string().min(1) })
+      .safeParse(await this.request(base, signal));
+    if (!metadata.success)
+      throw new MusicError(
+        'COLLECTION_IMPORT_FAILED',
+        'The collection could not be imported.',
+      );
+    const tracks: ProviderTrack[] = [];
+    let offset = 0;
+    let total = 0;
+    let skipped = 0;
+    let failed = 0;
+    let partial = false;
+    const pageSchema = z.object({
+      items: z.array(z.unknown()),
+      total: z.number().int().nonnegative(),
+      next: z.string().nullable().optional(),
+    });
+    while (offset < limit) {
+      if (signal?.aborted)
+        throw new MusicError(
+          'PARSER_CANCELLED',
+          'The music request was cancelled.',
+        );
+      let page: z.infer<typeof pageSchema>;
+      try {
+        page = pageSchema.parse(
+          await this.request(
+            `${base}/${input.resourceType === 'album' ? 'tracks' : 'items'}?${new URLSearchParams({ limit: String(Math.min(50, limit - offset)), offset: String(offset) })}`,
+            signal,
+          ),
+        );
+      } catch (error) {
+        if (
+          signal?.aborted ||
+          (error instanceof MusicError && error.code === 'PARSER_CANCELLED')
+        )
+          throw error;
+        if (!offset)
+          throw new MusicError(
+            'COLLECTION_IMPORT_FAILED',
+            'The collection could not be imported.',
+          );
+        failed += Math.max(0, Math.min(total, limit) - offset);
+        partial = true;
+        break;
+      }
+      total = page.total;
+      const items = page.items.slice(0, limit - offset);
+      for (const wrapper of items) {
+        let raw = wrapper;
+        if (input.resourceType === 'playlist') {
+          if (!wrapper || typeof wrapper !== 'object') {
+            skipped++;
+            continue;
+          }
+          const item = wrapper as {
+            item?: unknown;
+            track?: unknown;
+            is_local?: boolean;
+          };
+          if (item.is_local) {
+            skipped++;
+            continue;
+          }
+          raw = item.item ?? item.track;
+        }
+        if (
+          !raw ||
+          (typeof raw === 'object' &&
+            (('is_local' in raw && raw.is_local === true) ||
+              ('is_playable' in raw && raw.is_playable === false) ||
+              ('type' in raw && raw.type === 'episode')))
+        ) {
+          skipped++;
+          continue;
+        }
+        const parsed = trackSchema.safeParse(raw);
+        if (!parsed.success) {
+          failed++;
+          continue;
+        }
+        const track = this.normalize(parsed.data);
+        if (input.resourceType === 'album' && !track.album)
+          track.album = { title: metadata.data.name, id: input.sourceId };
+        tracks.push(track);
+      }
+      offset += items.length;
+      if (!items.length || !page.next || offset >= total) break;
+    }
+    return {
+      title: metadata.data.name,
+      tracks,
+      total,
+      skipped,
+      failed,
+      truncated: total > limit,
+      partial: partial || failed > 0,
+    };
   }
 }

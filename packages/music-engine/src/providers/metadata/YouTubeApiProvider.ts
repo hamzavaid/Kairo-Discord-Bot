@@ -2,7 +2,11 @@ import { z } from 'zod';
 import { MusicError } from '../../api/errors.js';
 import type { YouTubeApiOptions } from '../../api/MetadataOptions.js';
 import type { ClassifiedInput } from '../../parser/QueryClassifier.js';
-import type { MediaProvider, ProviderTrack } from '../MediaProvider.js';
+import type {
+  MediaProvider,
+  ProviderTrack,
+  ProviderCollection,
+} from '../MediaProvider.js';
 import { TimedCache } from '../musicbrainz/TimedCache.js';
 import { boundedJson } from './transport.js';
 
@@ -51,7 +55,7 @@ export class YouTubeApiProvider implements MediaProvider {
     return input.kind === 'provider-track' && input.providerId === this.id;
   }
   private async request(
-    path: 'search' | 'videos',
+    path: 'search' | 'videos' | 'playlistItems',
     params: Record<string, string>,
     signal?: AbortSignal,
   ): Promise<unknown> {
@@ -150,5 +154,88 @@ export class YouTubeApiProvider implements MediaProvider {
     );
     this.cache.set(key, results, this.options.searchCacheMs ?? 300_000);
     return results;
+  }
+
+  async getCollection(
+    input: Extract<ClassifiedInput, { kind: 'provider-collection' }>,
+    limit: number,
+    signal?: AbortSignal,
+  ): Promise<ProviderCollection> {
+    const pageSchema = z.object({
+      items: z.array(
+        z.object({
+          contentDetails: z.object({ videoId: z.string() }).optional(),
+        }),
+      ),
+      nextPageToken: z.string().max(1000).optional(),
+      pageInfo: z.object({ totalResults: z.number().int().nonnegative() }),
+    });
+    const tracks: ProviderTrack[] = [];
+    let scanned = 0;
+    let total = 0;
+    let skipped = 0;
+    let failed = 0;
+    let partial = false;
+    let token: string | undefined;
+    const seen = new Set<string>();
+    do {
+      if (signal?.aborted)
+        throw new MusicError(
+          'PARSER_CANCELLED',
+          'The music request was cancelled.',
+        );
+      try {
+        const page = pageSchema.parse(
+          await this.request(
+            'playlistItems',
+            {
+              part: 'contentDetails',
+              playlistId: input.sourceId,
+              maxResults: String(Math.min(50, limit - scanned)),
+              ...(token ? { pageToken: token } : {}),
+            },
+            signal,
+          ),
+        );
+        total = page.pageInfo.totalResults;
+        const items = page.items.slice(0, limit - scanned);
+        const ids = items.flatMap((item) =>
+          item.contentDetails?.videoId &&
+          /^[A-Za-z0-9_-]{11}$/u.test(item.contentDetails.videoId)
+            ? [item.contentDetails.videoId]
+            : [],
+        );
+        skipped += items.length - ids.length;
+        const videos = await this.videos(ids, signal);
+        tracks.push(...videos);
+        skipped += ids.length - videos.length;
+        scanned += items.length;
+        token = page.nextPageToken;
+        if (!items.length || (token && seen.has(token))) {
+          partial = Boolean(token);
+          break;
+        }
+        if (token) seen.add(token);
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        if (!scanned)
+          throw new MusicError(
+            'COLLECTION_IMPORT_FAILED',
+            'The collection could not be imported.',
+          );
+        failed += Math.max(0, Math.min(total, limit) - scanned);
+        partial = true;
+        break;
+      }
+    } while (token && scanned < limit);
+    return {
+      title: 'YouTube playlist',
+      tracks,
+      total,
+      skipped,
+      failed,
+      truncated: total > limit,
+      partial,
+    };
   }
 }

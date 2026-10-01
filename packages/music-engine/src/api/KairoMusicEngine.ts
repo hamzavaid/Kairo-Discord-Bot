@@ -56,6 +56,7 @@ import type {
 } from '../matching/types.js';
 
 export interface EngineOptions {
+  maxCollectionItems?: number;
   fixtureTracks?: FixtureTrack[];
   providerPriority?: string[];
   musicBrainz?: MusicBrainzOptions;
@@ -114,6 +115,13 @@ export interface KairoMusicEngine {
 export function createKairoMusicEngine(
   options: EngineOptions = {},
 ): KairoMusicEngine {
+  const maxCollectionItems = options.maxCollectionItems ?? 200;
+  if (
+    !Number.isInteger(maxCollectionItems) ||
+    maxCollectionItems < 1 ||
+    maxCollectionItems > 1000
+  )
+    throw new MusicError('INVALID_QUERY', 'Collection limit must be 1–1000.');
   if (
     options.bufferTimeoutMs !== undefined &&
     (!Number.isFinite(options.bufferTimeoutMs) || options.bufferTimeoutMs < 1)
@@ -494,7 +502,58 @@ export function createKairoMusicEngine(
         }
         const classified = classifyQuery(normalizeQuery(request.input));
         let result: ParseResult;
-        if (classified.kind === 'provider-track') {
+        if (classified.kind === 'provider-collection') {
+          if (!request.allowCollections)
+            throw new MusicError(
+              'COLLECTION_UNSUPPORTED',
+              'Use a collection import command for this URL.',
+            );
+          const { provider, value } = await manager.collection(
+            classified,
+            maxCollectionItems,
+            request.signal,
+          );
+          const tracks: Track[] = [];
+          let failed = value.failed;
+          for (const payload of value.tracks.slice(0, maxCollectionItems)) {
+            try {
+              tracks.push(
+                normalizeProviderTrack(payload, {
+                  providerId: provider.id,
+                  input: request.input,
+                  requestedBy: request.requestedBy,
+                  parsedBy: provider.id,
+                }),
+              );
+            } catch {
+              failed++;
+            }
+          }
+          if (!tracks.length)
+            throw new MusicError(
+              'COLLECTION_EMPTY',
+              'The collection has no importable tracks.',
+            );
+          result = {
+            kind: 'collection',
+            collection: {
+              id: `${provider.id}:${classified.sourceId}`,
+              title: value.title,
+              sourceProvider: provider.id,
+              sourceId: classified.sourceId,
+              canonicalUrl: classified.canonicalUrl,
+              tracks,
+              importSummary: {
+                total: value.total,
+                imported: tracks.length,
+                skipped: value.skipped,
+                failed,
+                truncated: value.truncated,
+                partial: value.partial || failed > 0,
+              },
+            },
+          };
+        } else if (classified.kind === 'provider-track') {
           const { provider, value: payload } = await manager.lookup(
             classified,
             request.signal,

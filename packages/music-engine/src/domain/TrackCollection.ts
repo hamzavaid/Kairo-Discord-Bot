@@ -8,4 +8,12 @@ export interface TrackCollection {
   sourceProvider: string;
   sourceId?: string;
   canonicalUrl?: string;
+  importSummary?: {
+    total: number;
+    imported: number;
+    skipped: number;
+    failed: number;
+    truncated: boolean;
+    partial: boolean;
+  };
 }

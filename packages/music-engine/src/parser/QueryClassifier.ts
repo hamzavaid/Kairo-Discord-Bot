@@ -3,6 +3,13 @@ import { MusicError } from '../api/errors.js';
 export type ClassifiedInput =
   | { kind: 'search'; query: string }
   | {
+      kind: 'provider-collection';
+      providerId: string;
+      sourceId: string;
+      canonicalUrl: string;
+      resourceType: 'playlist' | 'album';
+    }
+  | {
       kind: 'provider-track';
       providerId: string;
       sourceId: string;
@@ -30,6 +37,11 @@ export function classifyQuery(query: string): ClassifiedInput {
     );
   }
   if (url.hostname === 'musicbrainz.org') {
+    if (url.pathname.startsWith('/release/'))
+      throw new MusicError(
+        'COLLECTION_UNSUPPORTED',
+        'MusicBrainz collection imports are not supported.',
+      );
     const match =
       /^\/recording\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/?$/iu.exec(
         url.pathname,
@@ -48,6 +60,17 @@ export function classifyQuery(query: string): ClassifiedInput {
     };
   }
   if (url.hostname === 'open.spotify.com') {
+    const collection = /^\/(playlist|album)\/([A-Za-z0-9]{22})\/?$/u.exec(
+      url.pathname,
+    );
+    if (collection)
+      return {
+        kind: 'provider-collection',
+        providerId: 'spotify',
+        sourceId: collection[2]!,
+        resourceType: collection[1] as 'playlist' | 'album',
+        canonicalUrl: `https://open.spotify.com/${collection[1]}/${collection[2]}`,
+      };
     const match = /^\/track\/([A-Za-z0-9]{22})\/?$/u.exec(url.pathname);
     if (!match?.[1])
       throw new MusicError('INVALID_QUERY', 'Enter a valid Spotify track URL.');
@@ -63,6 +86,21 @@ export function classifyQuery(query: string): ClassifiedInput {
       url.hostname,
     )
   ) {
+    if (url.pathname === '/playlist') {
+      const id = url.searchParams.get('list');
+      if (!id || !/^[A-Za-z0-9_-]{10,100}$/u.test(id))
+        throw new MusicError(
+          'INVALID_QUERY',
+          'Enter a valid YouTube playlist URL.',
+        );
+      return {
+        kind: 'provider-collection',
+        providerId: 'youtube-sr',
+        sourceId: id,
+        resourceType: 'playlist',
+        canonicalUrl: `https://www.youtube.com/playlist?list=${id}`,
+      };
+    }
     const sourceId =
       url.hostname === 'youtu.be'
         ? url.pathname.slice(1)

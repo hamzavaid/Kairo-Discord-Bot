@@ -11,7 +11,7 @@ interface ParseEventContext {
 export type KairoMusicEvent =
   | (ParseEventContext & {
       type: 'parseSucceeded';
-      resultKind: 'track' | 'search';
+      resultKind: 'track' | 'search' | 'collection';
     })
   | (ParseEventContext & { type: 'parseFailed'; code: MusicErrorCode })
   | {

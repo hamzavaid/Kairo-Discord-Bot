@@ -3,7 +3,11 @@ import { z } from 'zod';
 import { MusicError } from '../../api/errors.js';
 import type { YoutubeSrOptions } from '../../api/MetadataOptions.js';
 import type { ClassifiedInput } from '../../parser/QueryClassifier.js';
-import type { MediaProvider, ProviderTrack } from '../MediaProvider.js';
+import type {
+  MediaProvider,
+  ProviderTrack,
+  ProviderCollection,
+} from '../MediaProvider.js';
 
 const videoSchema = z.object({
   id: z.string().regex(/^[A-Za-z0-9_-]{11}$/u),
@@ -115,5 +119,58 @@ export class YoutubeSrProvider implements MediaProvider {
         YouTube.search(text, { ...options, type: 'video' }));
     const raw = await this.run(search(query, { limit: maxResults }), signal);
     return raw.slice(0, maxResults).map((item) => this.normalize(item));
+  }
+
+  async getCollection(
+    input: Extract<ClassifiedInput, { kind: 'provider-collection' }>,
+    limit: number,
+    signal?: AbortSignal,
+  ): Promise<ProviderCollection> {
+    const getPlaylist =
+      this.options.getPlaylist ??
+      ((url: string, maximum: number, requestSignal?: AbortSignal) =>
+        YouTube.getPlaylist(url, {
+          limit: maximum,
+          fetchAll: true,
+          requestOptions: requestSignal ? { signal: requestSignal } : {},
+        }));
+    const raw = z
+      .object({
+        title: z.string().optional(),
+        videoCount: z.number().int().nonnegative().optional(),
+        videos: z.array(z.unknown()),
+      })
+      .safeParse(
+        await this.run(getPlaylist(input.canonicalUrl, limit, signal), signal),
+      );
+    if (!raw.success)
+      throw new MusicError(
+        'COLLECTION_IMPORT_FAILED',
+        'The collection could not be imported.',
+      );
+    const tracks: ProviderTrack[] = [];
+    let skipped = 0;
+    let failed = 0;
+    for (const item of raw.data.videos.slice(0, limit)) {
+      if (item === null) {
+        skipped++;
+        continue;
+      }
+      try {
+        tracks.push(this.normalize(item));
+      } catch {
+        failed++;
+      }
+    }
+    const total = raw.data.videoCount ?? raw.data.videos.length;
+    return {
+      title: raw.data.title?.trim() || 'YouTube playlist',
+      tracks,
+      total,
+      skipped,
+      failed,
+      truncated: total > Math.min(raw.data.videos.length, limit),
+      partial: failed > 0,
+    };
   }
 }
