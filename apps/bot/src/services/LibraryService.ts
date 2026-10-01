@@ -2,6 +2,7 @@ import {
   LibraryError,
   saveTrack,
   trackIdentity,
+  playlistName,
   type LibraryRepository,
   type LibraryCollection,
   type SavedTrack,
@@ -101,6 +102,7 @@ export class LibraryService {
     url: string,
     guildId: string,
   ) {
+    playlistName(name);
     const collection = await this.music.collection(url, guildId, owner);
     try {
       await this.repository.get(owner, name);

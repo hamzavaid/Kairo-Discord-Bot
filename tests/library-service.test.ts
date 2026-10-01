@@ -120,3 +120,12 @@ describe('library orchestration', () => {
     ).toBe('spotify:spotify-id');
   });
 });
+
+it('validates import names before provider requests or persistence', async () => {
+  const { service, music, repo } = setup();
+  await expect(
+    service.importCollection('alice', 'bad\nname', 'url', 'guild'),
+  ).rejects.toMatchObject({ code: 'PLAYLIST_NAME_INVALID' });
+  expect(music.collection).not.toHaveBeenCalled();
+  expect(await repo.list('alice')).toEqual([]);
+});

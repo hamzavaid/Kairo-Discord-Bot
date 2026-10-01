@@ -83,7 +83,20 @@ export class MusicService {
     guildId: string,
     userId: string,
   ): Promise<TrackCollection> {
-    const result = await this.client.parse(input, guildId, userId, true);
+    const result = await this.client
+      .parse(input, guildId, userId, true)
+      .catch((error: unknown) => {
+        if (
+          error instanceof MusicError &&
+          (error.code === 'UNSUPPORTED_PROVIDER' ||
+            error.code === 'INVALID_QUERY')
+        )
+          throw new MusicError(
+            'COLLECTION_UNSUPPORTED',
+            'Enter a supported playlist or album URL.',
+          );
+        throw error;
+      });
     if (result.kind !== 'collection')
       throw new MusicError(
         'COLLECTION_UNSUPPORTED',

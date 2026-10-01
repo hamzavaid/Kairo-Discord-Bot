@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { KairoMusicEngine, Track } from '@kairo/music-engine';
+import {
+  MusicError,
+  type KairoMusicEngine,
+  type Track,
+} from '@kairo/music-engine';
 import { KairoMusicClient } from '../apps/bot/src/services/KairoMusicClient.js';
 import { MusicService } from '../apps/bot/src/services/MusicService.js';
 
@@ -199,4 +203,16 @@ describe('Phase 6 MusicService', () => {
     ).rejects.toMatchObject({ code: 'WRONG_VOICE_CHANNEL' });
     expect(engine.enqueue).not.toHaveBeenCalled();
   });
+});
+
+it('maps unsupported collection URLs into the collection error contract without enqueueing', async () => {
+  const { engine, service } = setup();
+  engine.parse.mockRejectedValueOnce(
+    new MusicError('UNSUPPORTED_PROVIDER', 'raw provider detail'),
+  );
+  await expect(
+    service.collection('https://untrusted.invalid', 'guild', 'user'),
+  ).rejects.toMatchObject({ code: 'COLLECTION_UNSUPPORTED' });
+  expect(engine.enqueue).not.toHaveBeenCalled();
+  expect(engine.connectVoice).not.toHaveBeenCalled();
 });
