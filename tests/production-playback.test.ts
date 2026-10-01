@@ -46,6 +46,83 @@ function processFixture() {
 }
 
 describe('production source path through public engine', () => {
+  it('prepares only the active catalog track in an ordered enqueueMany sequence', async () => {
+    const search = vi.fn(async () => [
+      {
+        id: videoId,
+        title: 'Example Song',
+        duration: 180000,
+        channel: { name: 'Example Artist' },
+      },
+    ]);
+    const spawn = vi.fn((_exe: string, args: string[]) => {
+      const child = processFixture();
+      if (args.includes('--dump-single-json'))
+        queueMicrotask(() => {
+          child.stdout.emit(
+            'data',
+            Buffer.from(
+              JSON.stringify({
+                formats: [
+                  {
+                    format_id: 'opus',
+                    ext: 'webm',
+                    acodec: 'opus',
+                    vcodec: 'none',
+                    abr: 160,
+                  },
+                ],
+              }),
+            ),
+          );
+          child.emit('close', 0);
+        });
+      return child as never;
+    });
+    const connection = Object.assign(new EventEmitter(), {
+      subscribe: () => ({ unsubscribe: vi.fn() }),
+      destroy: vi.fn(),
+    });
+    const engine = createKairoMusicEngine({
+      youtubeSr: { search },
+      ytDlp: { spawn: spawn as never },
+      playbackRuntime: {
+        joinVoiceChannel: (() => connection) as never,
+        waitVoiceReady: async (v) => v,
+        createAudioPlayer: (() => new Player()) as never,
+        createAudioResource: ((
+          _input: unknown,
+          options: { metadata: unknown },
+        ) => ({ metadata: options.metadata })) as never,
+      },
+    });
+    try {
+      await engine.connectVoice({
+        guildId: 'guild',
+        channelId: 'voice',
+        adapterCreator: (() => ({})) as never,
+      });
+      await engine.enqueueMany({
+        guildId: 'guild',
+        enqueuedBy: 'user',
+        tracks: [source('spotify'), source('musicbrainz')],
+      });
+      await vi.waitFor(() =>
+        expect(engine.getPlayback('guild').state).toBe('PLAYING'),
+      );
+      expect(search).toHaveBeenCalledOnce();
+      expect(engine.getQueue('guild').upcoming[0]?.track.sourceProvider).toBe(
+        'musicbrainz',
+      );
+      await engine.skip('guild');
+      await vi.waitFor(() =>
+        expect(engine.getPlayback('guild').state).toBe('PLAYING'),
+      );
+      expect(search).toHaveBeenCalledTimes(2);
+    } finally {
+      await engine.shutdown();
+    }
+  });
   for (const provider of ['spotify', 'musicbrainz'] as const) {
     for (const action of ['skip', 'stop', 'disconnect', 'shutdown'] as const) {
       it(`${provider} matches YouTube, streams at guild quality, and cleans up on ${action}`, async () => {

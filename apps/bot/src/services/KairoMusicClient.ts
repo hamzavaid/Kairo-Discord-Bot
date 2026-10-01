@@ -15,8 +15,21 @@ export class KairoMusicClient {
     input: string,
     guildId: string,
     requestedBy: string,
+    allowCollections?: boolean,
   ): Promise<ParseResult> {
-    return this.engine.parse({ input, guildId, requestedBy });
+    return this.engine.parse({
+      input,
+      guildId,
+      requestedBy,
+      ...(allowCollections === undefined ? {} : { allowCollections }),
+    });
+  }
+  enqueueMany(
+    guildId: string,
+    tracks: Track[],
+    enqueuedBy: string,
+  ): Promise<QueueSnapshot> {
+    return this.engine.enqueueMany({ guildId, tracks, enqueuedBy });
   }
 
   preparePlayable(track: Track): Promise<Track> {

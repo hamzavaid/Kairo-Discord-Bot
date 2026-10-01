@@ -2,6 +2,7 @@ import {
   MusicError,
   type QueueSnapshot,
   type Track,
+  type TrackCollection,
   type VoiceTarget,
 } from '@kairo/music-engine';
 import { KairoMusicClient } from './KairoMusicClient.js';
@@ -76,6 +77,48 @@ export class MusicService {
 
   info(input: string, guildId: string, userId: string): Promise<Track> {
     return this.resolve(input, guildId, userId);
+  }
+  async collection(
+    input: string,
+    guildId: string,
+    userId: string,
+  ): Promise<TrackCollection> {
+    const result = await this.client.parse(input, guildId, userId, true);
+    if (result.kind !== 'collection')
+      throw new MusicError(
+        'COLLECTION_UNSUPPORTED',
+        'Enter a supported playlist or album URL.',
+      );
+    return result.collection;
+  }
+  currentTrack(guildId: string): Track {
+    const track = this.client.getPlayback(guildId).current?.track;
+    if (!track)
+      throw new MusicError(
+        'QUEUE_EMPTY',
+        'There is no currently playing track.',
+      );
+    return track;
+  }
+  async playTracks(input: {
+    guildId: string;
+    userId: string;
+    voiceTarget: VoiceTarget;
+    tracks: Track[];
+  }): Promise<{ queued: number }> {
+    if (!input.tracks.length)
+      throw new MusicError('COLLECTION_EMPTY', 'The collection is empty.');
+    this.assertVoiceChannel(input.guildId, input.voiceTarget.channelId);
+    if (this.client.getPlayback(input.guildId).state === 'DISCONNECTED') {
+      await this.client.connectVoice(input.voiceTarget);
+      this.channels.set(input.guildId, input.voiceTarget.channelId);
+    }
+    await this.client.enqueueMany(
+      input.guildId,
+      input.tracks.map((track) => ({ ...track, requestedBy: input.userId })),
+      input.userId,
+    );
+    return { queued: input.tracks.length };
   }
 
   queue(guildId: string): QueueSnapshot {

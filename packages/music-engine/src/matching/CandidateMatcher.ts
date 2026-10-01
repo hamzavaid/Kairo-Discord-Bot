@@ -116,6 +116,9 @@ export class CandidateMatcher {
         ...candidate.provenance,
         matchedFrom: request.source.sourceProvider,
         originalSourceProvider: request.source.sourceProvider,
+        ...(request.source.sourceId
+          ? { originalSourceId: request.source.sourceId }
+          : {}),
         selectedProviderId: candidate.sourceProvider,
         confidence: score,
         matchSignals: { ...signals },

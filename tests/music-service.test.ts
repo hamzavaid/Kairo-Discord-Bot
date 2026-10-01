@@ -45,6 +45,32 @@ function setup() {
 }
 
 describe('Phase 6 MusicService', () => {
+  it('queues canonical sequences atomically without eagerly preparing every stream', async () => {
+    const { engine, service } = setup();
+    const enqueueMany = vi.fn(async () => ({ guildId: 'guild', upcoming: [] }));
+    Object.assign(engine, { enqueueMany });
+    await service.playTracks({
+      guildId: 'guild',
+      userId: 'user',
+      voiceTarget: target,
+      tracks: [track('one'), track('two')],
+    });
+    expect(enqueueMany).toHaveBeenCalledWith({
+      guildId: 'guild',
+      enqueuedBy: 'user',
+      tracks: [track('one'), track('two')],
+    });
+    expect(engine.preparePlayable).not.toHaveBeenCalled();
+    expect(engine.connectVoice).toHaveBeenCalledWith(target);
+    await expect(
+      service.playTracks({
+        guildId: 'guild',
+        userId: 'user',
+        voiceTarget: target,
+        tracks: [],
+      }),
+    ).rejects.toMatchObject({ code: 'COLLECTION_EMPTY' });
+  });
   it('parses, connects, and enqueues a track through the public engine API', async () => {
     const { engine, service } = setup();
     const result = await service.play({

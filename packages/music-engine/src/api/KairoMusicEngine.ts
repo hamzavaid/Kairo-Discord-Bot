@@ -253,6 +253,7 @@ export function createKairoMusicEngine(
       current = new PlaybackSession({
         guildId,
         resolver,
+        prepareTrack: (track, signal) => playable.prepare(track, signal),
         ...(options.playbackRuntime?.createAudioPlayer
           ? { player: options.playbackRuntime.createAudioPlayer() }
           : {}),

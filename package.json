@@ -18,6 +18,7 @@
   "devDependencies": {
     "@discordjs/voice": "0.19.2",
     "@eslint/js": "^9.39.5",
+    "@kairo/data": "workspace:^",
     "@kairo/music-engine": "workspace:*",
     "@kairo/shared": "workspace:*",
     "@types/node": "^24.0.0",

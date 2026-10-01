@@ -11,6 +11,7 @@ import {
 import { MusicError } from '../api/errors.js';
 import type { PlaybackSnapshot } from '../api/playback.js';
 import type { QueueEntry } from '../api/queue.js';
+import type { Track } from '../domain/Track.js';
 import type { AudioSource, PreparedAudio } from '../stream/AudioSource.js';
 import { FFmpegPipeline } from '../stream/FFmpegPipeline.js';
 import { StreamResolver } from '../stream/StreamResolver.js';
@@ -22,6 +23,7 @@ import {
 } from './PlaybackStateMachine.js';
 
 export interface PlaybackSessionOptions {
+  prepareTrack?: (track: Track, signal: AbortSignal) => Promise<Track>;
   guildId: string;
   resolver: Pick<StreamResolver, 'resolve'>;
   player?: AudioPlayer;
@@ -159,6 +161,12 @@ export class PlaybackSession {
     signal: AbortSignal,
   ): Promise<void> {
     try {
+      if (this.options.prepareTrack) {
+        const track = await this.options.prepareTrack(entry.track, signal);
+        if (signal.aborted || this.generation !== generation) return;
+        entry = { ...entry, track };
+        this.entry = structuredClone(entry);
+      }
       let audioQuality: AudioQuality = DEFAULT_AUDIO_QUALITY;
       if (this.options.audioQualityForGuild)
         audioQuality = await this.options.audioQualityForGuild(

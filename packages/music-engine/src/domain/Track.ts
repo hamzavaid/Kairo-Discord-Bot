@@ -14,6 +14,7 @@ export interface TrackProvenance {
   matchedFrom?: string;
   confidence?: number;
   originalSourceProvider?: string;
+  originalSourceId?: string;
   selectedProviderId?: string;
   matchSignals?: {
     titleSimilarity: number;

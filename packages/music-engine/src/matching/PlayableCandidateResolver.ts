@@ -32,7 +32,14 @@ export class PlayableCandidateResolver {
         ...track,
         provenance: {
           ...track.provenance,
-          originalSourceProvider: track.sourceProvider,
+          originalSourceProvider:
+            track.provenance.originalSourceProvider ?? track.sourceProvider,
+          ...((track.provenance.originalSourceId ?? track.sourceId)
+            ? {
+                originalSourceId:
+                  track.provenance.originalSourceId ?? track.sourceId!,
+              }
+            : {}),
           selectedProviderId: track.sourceProvider,
           selectedCandidateId: track.sourceId,
           streamProvider: 'yt-dlp',
