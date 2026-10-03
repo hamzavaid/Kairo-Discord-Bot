@@ -129,3 +129,43 @@ it('validates import names before provider requests or persistence', async () =>
   expect(music.collection).not.toHaveBeenCalled();
   expect(await repo.list('alice')).toEqual([]);
 });
+
+it('saves ordered library snapshots and selected tracks without resolving metadata or streams', async () => {
+  const { service, music, repo } = setup();
+  await service.like('alice', 'guild');
+  music.info.mockClear();
+  const liked = await service.liked('alice');
+  const copy = await service.saveCollection(
+    'alice',
+    { kind: 'liked' },
+    'Saved favorites',
+  );
+  expect(copy.entries[0]?.fingerprint).toBe(liked.entries[0]?.fingerprint);
+  await service.unlikeSaved('alice', liked.entries[0]!.track);
+  expect((await service.liked('alice')).entries).toEqual([]);
+  expect((await service.get('alice', 'Saved favorites')).entries).toHaveLength(
+    1,
+  );
+  expect((await service.likeSaved('alice', copy.entries[0]!.track)).added).toBe(
+    true,
+  );
+  await service.create('alice', 'Destination');
+  await service.addSaved('alice', 'Destination', copy.entries[0]!.track);
+  await service.removeEntry(
+    'alice',
+    'Destination',
+    (await service.get('alice', 'Destination')).entries[0]!.id,
+  );
+  const saved = await service.saveCollection(
+    'alice',
+    { kind: 'playlist', name: 'Saved favorites' },
+    'Copy',
+  );
+  expect(saved.entries[0]?.track.title).toBe('Song');
+  await expect(
+    service.saveCollection('bob', { kind: 'playlist', name: 'Copy' }, 'Stolen'),
+  ).rejects.toMatchObject({ code: 'PLAYLIST_NOT_FOUND' });
+  expect(music.info).not.toHaveBeenCalled();
+  expect(music.playTracks).not.toHaveBeenCalled();
+  expect((await repo.get('alice', 'Copy')).entries).toHaveLength(1);
+});

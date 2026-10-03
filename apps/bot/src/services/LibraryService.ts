@@ -84,6 +84,34 @@ export class LibraryService {
   remove(owner: string, name: string, position: number) {
     return this.repository.remove(owner, name, position);
   }
+  removeEntry(owner: string, name: string, entryId: string) {
+    return this.repository.removeEntry(owner, name, entryId);
+  }
+  likeSaved(owner: string, track: SavedTrack) {
+    return this.repository.like(owner, saveTrack(track));
+  }
+  unlikeSaved(owner: string, track: SavedTrack) {
+    return this.repository.unlike(owner, trackIdentity(saveTrack(track)));
+  }
+  addSaved(owner: string, name: string, track: SavedTrack) {
+    return this.repository.append(owner, name, [saveTrack(track)]);
+  }
+  async saveCollection(
+    owner: string,
+    source: { kind: 'liked' } | { kind: 'playlist'; name: string },
+    name: string,
+  ) {
+    playlistName(name);
+    const collection =
+      source.kind === 'liked'
+        ? await this.liked(owner)
+        : await this.get(owner, source.name);
+    return this.repository.create(
+      owner,
+      name,
+      collection.entries.map((e) => e.track),
+    );
+  }
   clear(owner: string, name: string, expected?: LibraryCollection) {
     return this.repository.clear(owner, name, expected);
   }

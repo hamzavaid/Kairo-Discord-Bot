@@ -129,7 +129,11 @@ export interface AppendResult {
   duplicates: number;
 }
 export interface LibraryRepository {
-  create(owner: string, name: string): Promise<LibraryCollection>;
+  create(
+    owner: string,
+    name: string,
+    tracks?: SavedTrack[],
+  ): Promise<LibraryCollection>;
   get(owner: string, name: string): Promise<LibraryCollection>;
   list(owner: string): Promise<LibraryCollection[]>;
   delete(
@@ -152,6 +156,11 @@ export interface LibraryRepository {
     owner: string,
     name: string,
     position: number,
+  ): Promise<LibraryCollection>;
+  removeEntry(
+    owner: string,
+    name: string,
+    entryId: string,
   ): Promise<LibraryCollection>;
   move(
     owner: string,
@@ -275,7 +284,11 @@ export class MongoLibraryRepository implements LibraryRepository {
       updatedAt: now,
     };
   }
-  async create(owner: string, name: string): Promise<LibraryCollection> {
+  async create(
+    owner: string,
+    name: string,
+    tracks: SavedTrack[] = [],
+  ): Promise<LibraryCollection> {
     const names = playlistName(name);
     const record = this.make(
       owner,
@@ -283,6 +296,24 @@ export class MongoLibraryRepository implements LibraryRepository {
       names.normalizedName,
       'playlist',
     );
+    const seen = new Set<string>();
+    for (const input of tracks) {
+      const track = saveTrack(input);
+      const fingerprint = trackIdentity(track);
+      if (seen.has(fingerprint)) continue;
+      if (record.entries.length >= this.maxEntries)
+        throw new LibraryError(
+          'PLAYLIST_FULL',
+          `The collection is limited to ${this.maxEntries} tracks.`,
+        );
+      seen.add(fingerprint);
+      record.entries.push({
+        id: randomUUID(),
+        fingerprint,
+        track,
+        addedAt: record.createdAt,
+      });
+    }
     try {
       await this.model.create(record);
       return record;
@@ -465,6 +496,23 @@ export class MongoLibraryRepository implements LibraryRepository {
         this.position(r.entries, to);
         const [entry] = r.entries.splice(from - 1, 1);
         r.entries.splice(to - 1, 0, entry!);
+      })
+    ).collection;
+  }
+  async removeEntry(
+    owner: string,
+    name: string,
+    entryId: string,
+  ): Promise<LibraryCollection> {
+    return (
+      await this.mutate(owner, playlistName(name).normalizedName, (r) => {
+        const index = r.entries.findIndex((e) => e.id === entryId);
+        if (index < 0)
+          throw new LibraryError(
+            'TRACK_NOT_FOUND',
+            'That saved track is no longer in this playlist.',
+          );
+        r.entries.splice(index, 1);
       })
     ).collection;
   }

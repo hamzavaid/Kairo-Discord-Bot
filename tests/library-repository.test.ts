@@ -147,3 +147,34 @@ it('recovers a concurrent first-like upsert race from the owner unique index', a
   );
   expect((await repo.liked('alice')).ownerUserId).toBe('alice');
 });
+
+it('creates snapshot playlists atomically and removes stable entries after positions change', async () => {
+  const { connection } = libraryModel();
+  const repo = new MongoLibraryRepository(connection, { maxEntries: 2 });
+  const a = saveTrack(libraryTrack);
+  const b = saveTrack({ ...libraryTrack, sourceId: 'bcdefghijkl' });
+  const copy = await repo.create('alice', 'Copy', [a, b, a]);
+  expect(copy.entries.map((e) => e.track.sourceId)).toEqual([
+    'abcdefghijk',
+    'bcdefghijkl',
+  ]);
+  const selected = copy.entries[1]!.id;
+  await repo.move('alice', 'Copy', 2, 1);
+  await repo.removeEntry('alice', 'Copy', selected);
+  expect((await repo.get('alice', 'Copy')).entries[0]?.track.sourceId).toBe(
+    'abcdefghijk',
+  );
+  await expect(
+    repo.removeEntry('alice', 'Copy', selected),
+  ).rejects.toMatchObject({ code: 'TRACK_NOT_FOUND' });
+  await expect(
+    repo.create('alice', 'Too big', [
+      a,
+      b,
+      saveTrack({ ...libraryTrack, sourceId: 'cdefghijklm' }),
+    ]),
+  ).rejects.toMatchObject({ code: 'PLAYLIST_FULL' });
+  await expect(repo.get('alice', 'Too big')).rejects.toMatchObject({
+    code: 'PLAYLIST_NOT_FOUND',
+  });
+});
