@@ -1,8 +1,7 @@
 import { LibraryError, type LibraryCollection } from '@kairo/data';
-import type { ChatInputCommandInteraction } from 'discord.js';
 import type { VoiceTarget } from '@kairo/music-engine';
 import { CommandError } from '../../errors.js';
-import { guild, userVoiceChannel } from '../guards.js';
+import { guild, userVoiceChannel, type GuildInteraction } from '../guards.js';
 import type { CommandExecutionContext } from '../types.js';
 export function library(context: CommandExecutionContext) {
   if (!context.library)
@@ -13,7 +12,7 @@ export function library(context: CommandExecutionContext) {
   return context.library;
 }
 export function voiceTarget(
-  interaction: ChatInputCommandInteraction,
+  interaction: GuildInteraction,
   context: CommandExecutionContext,
 ): VoiceTarget {
   const guildId = guild(interaction);

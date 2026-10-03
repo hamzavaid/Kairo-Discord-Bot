@@ -22,6 +22,7 @@ export interface CommandExecutionContext extends CommandServices {
   isDeveloper: boolean;
   commands: ReadonlyMap<string, SlashCommand>;
   reportComponentError?: (error: unknown) => void;
+  componentErrorMessage?: (error: unknown) => string;
 }
 
 export interface SlashCommandData {

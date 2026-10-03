@@ -1,8 +1,12 @@
 import type { ChatInputCommandInteraction } from 'discord.js';
 import { CommandError } from '../errors.js';
 import type { MusicService } from '../services/MusicService.js';
+export type GuildInteraction = Pick<
+  ChatInputCommandInteraction,
+  'guildId' | 'guild' | 'user'
+>;
 
-export function guild(interaction: ChatInputCommandInteraction): string {
+export function guild(interaction: GuildInteraction): string {
   if (!interaction.guildId)
     throw new CommandError('GUILD_ONLY', 'Use this command in a server.');
   return interaction.guildId;
@@ -15,7 +19,7 @@ export function query(interaction: ChatInputCommandInteraction): string {
 }
 
 export function userVoiceChannel(
-  interaction: ChatInputCommandInteraction,
+  interaction: GuildInteraction,
 ): string | undefined {
   return (
     interaction.guild?.voiceStates.cache.get(interaction.user.id)?.channelId ??

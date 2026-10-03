@@ -27,6 +27,7 @@ describe.skipIf(!enabled)('isolated real MongoDB library persistence', () => {
         repo.append('alice', 'mix', [track]),
       ]);
       await Promise.all([repo.like('alice', track), repo.like('alice', track)]);
+      await repo.create('alice', 'Snapshot', [track, track]);
       const second = await mongoose
         .createConnection(uri, { dbName, serverSelectionTimeoutMS: 5000 })
         .asPromise();
@@ -36,6 +37,17 @@ describe.skipIf(!enabled)('isolated real MongoDB library persistence', () => {
           1,
         );
         expect((await reconstructed.liked('alice')).entries).toHaveLength(1);
+        const snapshot = await reconstructed.get('alice', 'Snapshot');
+        expect(snapshot.entries).toHaveLength(1);
+        expect(snapshot.entries[0]?.track.title).toBe(track.title);
+        await reconstructed.removeEntry(
+          'alice',
+          'Snapshot',
+          snapshot.entries[0]!.id,
+        );
+        expect((await reconstructed.get('alice', 'Snapshot')).entries).toEqual(
+          [],
+        );
         await expect(reconstructed.get('bob', 'mix')).rejects.toMatchObject({
           code: 'PLAYLIST_NOT_FOUND',
         });

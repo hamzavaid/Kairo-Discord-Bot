@@ -29,6 +29,7 @@ import playlistCommand from './library/playlist.js';
 import likedCommand from './library/liked.js';
 import likeCommand from './library/like.js';
 import dislikeCommand from './library/dislike.js';
+import menuCommand from './library/menu.js';
 
 export type ErrorReporter = (
   error: unknown,
@@ -136,6 +137,7 @@ const builtInCommands: readonly SlashCommand[] = [
   likedCommand,
   likeCommand,
   dislikeCommand,
+  menuCommand,
 ];
 
 export class SlashCommandHandler {
@@ -209,6 +211,7 @@ export class SlashCommandHandler {
           : {}),
         isDeveloper,
         commands: this.commands,
+        componentErrorMessage: (error) => safeFailure(error).message,
         reportComponentError: (error) => {
           const safe = safeFailure(error);
           this.report(error, commandName, guildId, userId, safe.code);

@@ -12,6 +12,8 @@ import infoCommand from '../apps/bot/src/commands/utility/info.js';
 import pingCommand from '../apps/bot/src/commands/utility/ping.js';
 import settingsCommand from '../apps/bot/src/commands/utility/settings.js';
 
+import menuCommand from '../apps/bot/src/commands/library/menu.js';
+
 const commands = [
   playCommand,
   pauseCommand,
@@ -25,6 +27,7 @@ const commands = [
   helpCommand,
   infoCommand,
   auditlogCommand,
+  menuCommand,
 ];
 
 describe('individual command modules', () => {
@@ -42,6 +45,7 @@ describe('individual command modules', () => {
       'help',
       'info',
       'auditlog',
+      'menu',
     ]);
 
     for (const command of commands) {
