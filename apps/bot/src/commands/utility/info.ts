@@ -1,7 +1,7 @@
-import { SlashCommandBuilder } from 'discord.js';
+import { MessageFlags, SlashCommandBuilder } from 'discord.js';
 import { guild, query } from '../guards.js';
 import type { SlashCommand } from '../types.js';
-import { infoText } from './formatTrack.js';
+import { infoCard } from './formatTrack.js';
 
 const command: SlashCommand = {
   data: new SlashCommandBuilder()
@@ -22,7 +22,11 @@ const command: SlashCommand = {
       guild(interaction),
       interaction.user.id,
     );
-    await interaction.editReply({ content: infoText(track) });
+    await interaction.editReply({
+      components: [infoCard(track)],
+      flags: MessageFlags.IsComponentsV2,
+      allowedMentions: { parse: [] },
+    });
   },
 };
 

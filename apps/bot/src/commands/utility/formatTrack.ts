@@ -1,25 +1,121 @@
+import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ContainerBuilder,
+  SectionBuilder,
+  SeparatorBuilder,
+  TextDisplayBuilder,
+  ThumbnailBuilder,
+  escapeMarkdown,
+} from 'discord.js';
 import type { Track } from '@kairo/music-engine';
 
-function seconds(ms?: number): string {
-  if (ms === undefined) return 'unknown';
-  return `${Math.floor(ms / 60_000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
+export const uiText = (value: string, limit = 200) =>
+  escapeMarkdown(value.replace(/[\r\n\p{Cc}]/gu, ' ').slice(0, limit));
+export function duration(ms?: number): string {
+  if (ms === undefined) return 'Unknown';
+  return `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
 }
-
-export function infoText(track: Track): string {
-  return [
-    `Title: ${track.title}`,
-    `Artists: ${track.artists.map((artist) => artist.name).join(', ')}`,
-    ...(track.album ? [`Album: ${track.album.title}`] : []),
-    `Duration: ${seconds(track.durationMs)}`,
-    `Provider: ${track.sourceProvider}`,
-    `Resolved by: ${track.provenance.parsedBy}`,
-    ...(track.sourceId ? [`Source ID: ${track.sourceId}`] : []),
-    ...(track.canonicalUrl ? [`URL: ${track.canonicalUrl}`] : []),
-    ...(track.artworkUrl ? [`Artwork: ${track.artworkUrl}`] : []),
-    ...(track.provenance.confidence === undefined
-      ? []
-      : [`Confidence: ${track.provenance.confidence.toFixed(2)}`]),
-  ]
-    .join('\n')
-    .slice(0, 1900);
+/** Only known canonical resources become hyperlinks, never signed stream URLs. */
+export function resourceLink(
+  provider: string,
+  id?: string,
+): string | undefined {
+  if (!id) return;
+  if (
+    (provider === 'youtube-sr' || provider === 'youtube-api') &&
+    /^[A-Za-z0-9_-]{11}$/u.test(id)
+  )
+    return `https://www.youtube.com/watch?v=${id}`;
+  if (provider === 'spotify' && /^[A-Za-z0-9]{22}$/u.test(id))
+    return `https://open.spotify.com/track/${id}`;
+  if (provider === 'musicbrainz' && /^[0-9a-f-]{36}$/iu.test(id))
+    return `https://musicbrainz.org/recording/${id}`;
+  if (provider === 'fixture' && /^[a-z0-9-]+$/u.test(id))
+    return `https://fixture.kairo.invalid/tracks/${id}`;
+}
+function artwork(value?: string): string | undefined {
+  if (!value) return;
+  try {
+    const url = new URL(value);
+    if (
+      url.protocol === 'https:' &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      ['i.ytimg.com', 'i.scdn.co', 'coverartarchive.org', 'archive.org'].some(
+        (host) => url.hostname === host || url.hostname.endsWith(`.${host}`),
+      )
+    )
+      return url.href;
+  } catch {
+    /* Omit invalid image URLs. */
+  }
+}
+export function infoCard(track: Track): ContainerBuilder {
+  const source = resourceLink(track.sourceProvider, track.sourceId);
+  const title = uiText(track.title, 350);
+  const header = new TextDisplayBuilder().setContent(
+    `## ${source ? `[${title}](<${source}>)` : title}\n${track.artists
+      .slice(0, 6)
+      .map((a) => uiText(a.name, 100))
+      .join(' · ')}`,
+  );
+  const card = new ContainerBuilder().setAccentColor(0x7c5cff);
+  const image = artwork(track.artworkUrl);
+  if (image)
+    card.addSectionComponents(
+      new SectionBuilder()
+        .addTextDisplayComponents(header)
+        .setThumbnailAccessory(
+          new ThumbnailBuilder().setURL(image).setDescription('Track artwork'),
+        ),
+    );
+  else card.addTextDisplayComponents(header);
+  const album = track.album ? uiText(track.album.title, 200) : 'Not provided';
+  const albumLink =
+    track.sourceProvider === 'spotify' &&
+    track.album?.id &&
+    /^[A-Za-z0-9]{22}$/u.test(track.album.id)
+      ? `https://open.spotify.com/album/${track.album.id}`
+      : undefined;
+  card
+    .addSeparatorComponents(new SeparatorBuilder())
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        [
+          `**Album:** ${albumLink ? `[${album}](<${albumLink}>)` : album}`,
+          `**Duration:** ${track.isLive ? 'Live' : duration(track.durationMs)}${track.explicit ? ' · Explicit' : ''}`,
+          `**Provider:** ${uiText(track.sourceProvider, 80)}`,
+          `Resolved by: ${uiText(track.provenance.parsedBy, 80)}`,
+          ...(track.sourceId
+            ? [`**Source ID:** ${uiText(track.sourceId, 100)}`]
+            : []),
+          ...(track.provenance.originalSourceProvider
+            ? [
+                `**Original source:** ${uiText(track.provenance.originalSourceProvider, 80)}`,
+              ]
+            : []),
+          ...(track.provenance.confidence === undefined
+            ? []
+            : [`Confidence: ${track.provenance.confidence.toFixed(2)}`]),
+        ].join('\n'),
+      ),
+    );
+  if (source)
+    card.addActionRowComponents(
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setLabel('Open source')
+          .setStyle(ButtonStyle.Link)
+          .setURL(source),
+      ),
+    );
+  card.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      '-# Metadata only · Nothing was queued or played.',
+    ),
+  );
+  return card;
 }
