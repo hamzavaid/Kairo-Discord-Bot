@@ -25,7 +25,7 @@ it('renders metadata in Components V2 with canonical hyperlinks, artwork, and no
   });
   await info.execute(
     {
-      options: { getString: () => 'query' },
+      options: { getString: () => 'query', getInteger: () => null },
       guildId: 'guild',
       user: { id: 'user' },
       deferReply: vi.fn(),
@@ -60,7 +60,7 @@ it('bounds hostile metadata text and omits unsafe URLs and missing artwork', asy
   });
   await info.execute(
     {
-      options: { getString: () => 'query' },
+      options: { getString: () => 'query', getInteger: () => null },
       guildId: 'guild',
       user: { id: 'user' },
       deferReply: vi.fn(),
@@ -88,4 +88,95 @@ it('bounds hostile metadata text and omits unsafe URLs and missing artwork', asy
   expect(json).not.toContain('token=secret');
   expect(json).not.toContain('file:');
   expect(json.length).toBeLessThan(4000);
+});
+
+it('includes a large YouTube picture even when metadata artwork is absent or has query parameters', async () => {
+  const { infoCard } =
+    await import('../apps/bot/src/commands/utility/formatTrack.js');
+  for (const artworkUrl of [
+    undefined,
+    'https://i.ytimg.com/vi/abcdefghijk/hq720.jpg?sqp=resize&rs=cache',
+  ]) {
+    const json = infoCard({
+      ...libraryTrack,
+      ...(artworkUrl ? { artworkUrl } : {}),
+    }).toJSON();
+    const gallery = json.components.find((c) => c.type === 12);
+    expect(gallery).toMatchObject({
+      type: 12,
+      items: [
+        { media: { url: 'https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg' } },
+      ],
+    });
+  }
+});
+it('registers bounded searchs and browses only the owner requested metadata results', async () => {
+  const { EventEmitter } = await import('node:events');
+  const collector = new EventEmitter();
+  const createCollector = vi.fn((options: unknown) => {
+    void options;
+    return collector;
+  });
+  const editReply = vi.fn(async (options: unknown) => {
+    void options;
+    return { createMessageComponentCollector: createCollector };
+  });
+  const results = [
+    libraryTrack,
+    { ...libraryTrack, title: 'Second', sourceId: 'bcdefghijkl' },
+  ];
+  const music = { infoResults: vi.fn(async () => results), play: vi.fn() };
+  const context = {
+    music,
+    reportComponentError: vi.fn(),
+  } as unknown as CommandExecutionContext;
+  await info.execute(
+    {
+      id: 'search-id',
+      options: { getString: () => 'song', getInteger: () => 2 },
+      guildId: 'guild',
+      user: { id: 'alice' },
+      deferReply: vi.fn(),
+      editReply,
+    } as unknown as ChatInputCommandInteraction,
+    context,
+  );
+  expect(info.data.toJSON().options?.[1]).toMatchObject({
+    name: 'searchs',
+    type: 4,
+    min_value: 1,
+    max_value: 25,
+    required: false,
+  });
+  expect(music.infoResults).toHaveBeenCalledWith('song', 'guild', 'alice', 2);
+  const options = createCollector.mock.calls[0]![0] as {
+    time: number;
+    filter: (i: unknown) => boolean;
+  };
+  expect(options.time).toBe(60000);
+  expect(
+    options.filter({
+      user: { id: 'bob' },
+      customId: 'kairo:info:search-id:next',
+    }),
+  ).toBe(false);
+  const update = vi.fn(async (options: unknown) => {
+    void options;
+  });
+  collector.emit('collect', {
+    user: { id: 'alice' },
+    customId: 'kairo:info:search-id:next',
+    isButton: () => true,
+    update,
+  });
+  await vi.waitFor(() => expect(update).toHaveBeenCalledOnce());
+  expect(JSON.stringify(update.mock.calls[0]![0])).toContain('Second');
+  expect(JSON.stringify(update.mock.calls[0]![0])).toContain('Result 2/2');
+  collector.emit('end');
+  await vi.waitFor(() =>
+    expect(JSON.stringify(editReply.mock.calls.at(-1)![0])).toContain(
+      '"disabled":true',
+    ),
+  );
+  expect(music.play).not.toHaveBeenCalled();
 });

@@ -353,7 +353,7 @@ describe('slash command handler and audits', () => {
     expect(text).toContain('Album');
     expect(text).toContain('fixture');
     expect(text).toContain('Confidence: 0.90');
-    expect(text).toContain('Resolved by: fixture');
+    expect(text).toContain('Resolved by:** fixture');
   });
 
   it('maps typed engine failures to safe command responses and audit codes', async () => {

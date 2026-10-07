@@ -78,6 +78,31 @@ export class MusicService {
   info(input: string, guildId: string, userId: string): Promise<Track> {
     return this.resolve(input, guildId, userId);
   }
+  async infoResults(
+    input: string,
+    guildId: string,
+    userId: string,
+    count: number,
+  ): Promise<Track[]> {
+    if (!Number.isInteger(count) || count < 1 || count > 25)
+      throw new MusicError('INVALID_QUERY', 'Choose 1 to 25 search results.');
+    const result = await this.client.parse(
+      input,
+      guildId,
+      userId,
+      undefined,
+      count,
+    );
+    const tracks =
+      result.kind === 'track'
+        ? [result.track]
+        : result.kind === 'search'
+          ? result.candidates.slice(0, count)
+          : [];
+    if (!tracks.length)
+      throw new MusicError('NO_SEARCH_RESULTS', 'No matching song was found.');
+    return tracks;
+  }
   async collection(
     input: string,
     guildId: string,

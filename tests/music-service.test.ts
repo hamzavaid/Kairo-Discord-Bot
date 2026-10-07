@@ -216,3 +216,33 @@ it('maps unsupported collection URLs into the collection error contract without 
   expect(engine.enqueue).not.toHaveBeenCalled();
   expect(engine.connectVoice).not.toHaveBeenCalled();
 });
+
+it('returns bounded canonical info results through the parser without preparing streams', async () => {
+  const { engine, service } = setup();
+  engine.parse.mockResolvedValueOnce({
+    kind: 'search',
+    candidates: [track('one'), track('two'), track('three')],
+  });
+  expect(
+    (await service.infoResults('song', 'guild', 'user', 2)).map((t) => t.title),
+  ).toEqual(['Song one', 'Song two']);
+  expect(engine.parse).toHaveBeenCalledWith({
+    input: 'song',
+    guildId: 'guild',
+    requestedBy: 'user',
+    maxResults: 2,
+  });
+  expect(engine.preparePlayable).not.toHaveBeenCalled();
+  expect(engine.connectVoice).not.toHaveBeenCalled();
+  expect(engine.enqueue).not.toHaveBeenCalled();
+  engine.parse.mockResolvedValueOnce({ kind: 'track', track: track('one') });
+  expect(await service.infoResults('url', 'guild', 'user', 5)).toHaveLength(1);
+  for (const count of [0, 26, 1.5])
+    await expect(
+      service.infoResults('query', 'guild', 'user', count),
+    ).rejects.toMatchObject({ code: 'INVALID_QUERY' });
+  engine.parse.mockResolvedValueOnce({ kind: 'search', candidates: [] });
+  await expect(
+    service.infoResults('none', 'guild', 'user', 2),
+  ).rejects.toMatchObject({ code: 'NO_SEARCH_RESULTS' });
+});

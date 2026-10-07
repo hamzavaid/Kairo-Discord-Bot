@@ -3,6 +3,7 @@ import {
   ButtonBuilder,
   ButtonStyle,
   ContainerBuilder,
+  MediaGalleryBuilder,
   SectionBuilder,
   SeparatorBuilder,
   TextDisplayBuilder,
@@ -63,8 +64,26 @@ export function infoCard(track: Track): ContainerBuilder {
       .join(' · ')}`,
   );
   const card = new ContainerBuilder().setAccentColor(0x7c5cff);
-  const image = artwork(track.artworkUrl);
-  if (image)
+
+  const videoId =
+    (track.sourceProvider === 'youtube-sr' ||
+      track.sourceProvider === 'youtube-api') &&
+    track.sourceId &&
+    /^[A-Za-z0-9_-]{11}$/u.test(track.sourceId)
+      ? track.sourceId
+      : undefined;
+  const image = videoId
+    ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
+    : artwork(track.artworkUrl);
+  if (videoId && image) {
+    card
+      .addTextDisplayComponents(header)
+      .addMediaGalleryComponents(
+        new MediaGalleryBuilder().addItems((item) =>
+          item.setURL(image).setDescription('YouTube video picture'),
+        ),
+      );
+  } else if (image)
     card.addSectionComponents(
       new SectionBuilder()
         .addTextDisplayComponents(header)
@@ -88,7 +107,7 @@ export function infoCard(track: Track): ContainerBuilder {
           `**Album:** ${albumLink ? `[${album}](<${albumLink}>)` : album}`,
           `**Duration:** ${track.isLive ? 'Live' : duration(track.durationMs)}${track.explicit ? ' · Explicit' : ''}`,
           `**Provider:** ${uiText(track.sourceProvider, 80)}`,
-          `Resolved by: ${uiText(track.provenance.parsedBy, 80)}`,
+          `**Resolved by:** ${uiText(track.provenance.parsedBy, 80)}`,
           ...(track.sourceId
             ? [`**Source ID:** ${uiText(track.sourceId, 100)}`]
             : []),

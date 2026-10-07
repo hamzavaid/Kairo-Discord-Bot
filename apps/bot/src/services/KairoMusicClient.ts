@@ -16,12 +16,14 @@ export class KairoMusicClient {
     guildId: string,
     requestedBy: string,
     allowCollections?: boolean,
+    maxResults?: number,
   ): Promise<ParseResult> {
     return this.engine.parse({
       input,
       guildId,
       requestedBy,
       ...(allowCollections === undefined ? {} : { allowCollections }),
+      ...(maxResults === undefined ? {} : { maxResults }),
     });
   }
   enqueueMany(
