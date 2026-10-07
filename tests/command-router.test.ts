@@ -190,11 +190,15 @@ describe('slash command handler and audits', () => {
     const { handler, run } = setup();
     expect(handler.names()).toEqual([
       'play',
+      'p',
       'pause',
       'resume',
       'skip',
+      's',
+      'next',
       'stop',
       'disconnect',
+      'leave',
       'queue',
       'ping',
       'settings',
@@ -202,13 +206,15 @@ describe('slash command handler and audits', () => {
       'info',
       'search',
       'auditlog',
+      'log',
       'playlist',
       'liked',
       'like',
+      'heart',
       'dislike',
       'menu',
     ]);
-    expect(handler.registrationData()).toHaveLength(18);
+    expect(handler.registrationData()).toHaveLength(24);
 
     const result = await run('help');
     const payload = lastPayload(result.reply) as {
