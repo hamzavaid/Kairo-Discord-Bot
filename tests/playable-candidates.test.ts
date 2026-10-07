@@ -36,7 +36,7 @@ describe('playable candidate preparation', () => {
       const engine = createKairoMusicEngine({ youtubeSr: { search } });
       const matched = await engine.preparePlayable(source(provider));
       expect(search).toHaveBeenCalledWith('Example Artist Example Song', {
-        limit: 10,
+        limit: 25,
       });
       expect(matched.sourceProvider).toBe('youtube-sr');
       expect(matched.sourceId).toBe(videoId);

@@ -1,5 +1,9 @@
 import { YouTube } from 'youtube-sr';
 import { z } from 'zod';
+import {
+  MUSIC_SEARCH_POOL_SIZE,
+  rankMusicSearchResults,
+} from './musicSearchRanking.js';
 import { MusicError } from '../../api/errors.js';
 import type { YoutubeSrOptions } from '../../api/MetadataOptions.js';
 import type { ClassifiedInput } from '../../parser/QueryClassifier.js';
@@ -117,8 +121,14 @@ export class YoutubeSrProvider implements MediaProvider {
       this.options.search ??
       ((text: string, options: { limit: number }) =>
         YouTube.search(text, { ...options, type: 'video' }));
-    const raw = await this.run(search(query, { limit: maxResults }), signal);
-    return raw.slice(0, maxResults).map((item) => this.normalize(item));
+    const raw = await this.run(
+      search(query, { limit: Math.max(MUSIC_SEARCH_POOL_SIZE, maxResults) }),
+      signal,
+    );
+    const tracks = raw
+      .slice(0, Math.max(MUSIC_SEARCH_POOL_SIZE, maxResults))
+      .map((item) => this.normalize(item));
+    return rankMusicSearchResults(query, tracks).slice(0, maxResults);
   }
 
   async getCollection(

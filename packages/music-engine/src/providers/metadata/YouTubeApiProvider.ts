@@ -1,4 +1,8 @@
 import { z } from 'zod';
+import {
+  MUSIC_SEARCH_POOL_SIZE,
+  rankMusicSearchResults,
+} from './musicSearchRanking.js';
 import { MusicError } from '../../api/errors.js';
 import type { YouTubeApiOptions } from '../../api/MetadataOptions.js';
 import type { ClassifiedInput } from '../../parser/QueryClassifier.js';
@@ -138,7 +142,7 @@ export class YouTubeApiProvider implements MediaProvider {
           part: 'snippet',
           type: 'video',
           q: query,
-          maxResults: String(maxResults),
+          maxResults: String(Math.max(MUSIC_SEARCH_POOL_SIZE, maxResults)),
         },
         signal,
       ),
@@ -149,11 +153,14 @@ export class YouTubeApiProvider implements MediaProvider {
         'The music source returned invalid metadata.',
       );
     const results = await this.videos(
-      parsed.data.items.map((item) => item.id.videoId),
+      parsed.data.items
+        .slice(0, Math.max(MUSIC_SEARCH_POOL_SIZE, maxResults))
+        .map((item) => item.id.videoId),
       signal,
     );
-    this.cache.set(key, results, this.options.searchCacheMs ?? 300_000);
-    return results;
+    const ranked = rankMusicSearchResults(query, results).slice(0, maxResults);
+    this.cache.set(key, ranked, this.options.searchCacheMs ?? 300_000);
+    return ranked;
   }
 
   async getCollection(
