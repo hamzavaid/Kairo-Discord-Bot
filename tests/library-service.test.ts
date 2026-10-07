@@ -169,3 +169,35 @@ it('saves ordered library snapshots and selected tracks without resolving metada
   expect(music.playTracks).not.toHaveBeenCalled();
   expect((await repo.get('alice', 'Copy')).entries).toHaveLength(1);
 });
+
+it('saves a resolved info track with origin identity and duplicate protection without a second search', async () => {
+  const { service, repo, music } = setup();
+  const track = {
+    ...libraryTrack,
+    provenance: {
+      input: 'search',
+      parsedBy: 'youtube-sr',
+      originalSourceProvider: 'spotify',
+      originalSourceId: 'original-song',
+    },
+  };
+  expect((await service.likeSaved('alice', track)).added).toBe(true);
+  const reconstructed = new LibraryService(
+    repo,
+    music as unknown as MusicService,
+  );
+  expect((await reconstructed.likeSaved('alice', track)).added).toBe(false);
+  const saved = await reconstructed.liked('alice');
+  expect(saved.entries).toHaveLength(1);
+  expect(saved.entries[0]).toMatchObject({
+    fingerprint: 'spotify:original-song',
+    track: {
+      title: 'Song',
+      originProvider: 'spotify',
+      originId: 'original-song',
+    },
+  });
+  expect((await reconstructed.liked('bob')).entries).toEqual([]);
+  expect(music.info).not.toHaveBeenCalled();
+  expect(music.playTracks).not.toHaveBeenCalled();
+});

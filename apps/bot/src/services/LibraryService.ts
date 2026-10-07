@@ -87,7 +87,7 @@ export class LibraryService {
   removeEntry(owner: string, name: string, entryId: string) {
     return this.repository.removeEntry(owner, name, entryId);
   }
-  likeSaved(owner: string, track: SavedTrack) {
+  likeSaved(owner: string, track: SavedTrack | Track) {
     return this.repository.like(owner, saveTrack(track));
   }
   unlikeSaved(owner: string, track: SavedTrack) {

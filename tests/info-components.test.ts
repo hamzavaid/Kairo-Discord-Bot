@@ -180,3 +180,127 @@ it('registers bounded searchs and browses only the owner requested metadata resu
   );
   expect(music.play).not.toHaveBeenCalled();
 });
+
+it('lets only the owner like the displayed result, handles duplicates, and disables expired controls', async () => {
+  const { EventEmitter } = await import('node:events');
+  const collector = new EventEmitter();
+  const createCollector = vi.fn((options: unknown) => {
+    void options;
+    return collector;
+  });
+  const editReply = vi.fn(async (_options: unknown) => {
+    void _options;
+    return { createMessageComponentCollector: createCollector };
+  });
+  const likeSaved = vi.fn(async () => ({ added: false }));
+  const tracks = [
+    libraryTrack,
+    { ...libraryTrack, title: 'Second', sourceId: 'bcdefghijkl' },
+  ];
+  const context = {
+    music: {
+      infoResults: vi.fn(async () => tracks),
+      info: vi.fn(),
+      play: vi.fn(),
+    },
+    library: { likeSaved },
+    reportComponentError: vi.fn(),
+  } as unknown as CommandExecutionContext;
+  await info.execute(
+    {
+      id: 'like-test',
+      options: { getString: () => 'song', getInteger: () => 2 },
+      guildId: 'guild',
+      user: { id: 'alice' },
+      deferReply: vi.fn(),
+      editReply,
+    } as unknown as ChatInputCommandInteraction,
+    context,
+  );
+  const options = createCollector.mock.calls[0]![0] as {
+    filter(i: unknown): boolean;
+  };
+  const update = vi.fn();
+  collector.emit('collect', {
+    customId: 'kairo:info:like-test:next',
+    user: { id: 'alice' },
+    isButton: () => true,
+    update,
+  });
+  await vi.waitFor(() => expect(update).toHaveBeenCalledOnce());
+  const click = {
+    customId: 'kairo:info:like-test:like:1',
+    user: { id: 'alice' },
+    isButton: () => true,
+    deferUpdate: vi.fn(),
+    editReply: vi.fn(),
+    followUp: vi.fn(),
+  };
+  expect(options.filter({ ...click, user: { id: 'bob' } })).toBe(false);
+  collector.emit('collect', { ...click, user: { id: 'bob' } });
+  expect(likeSaved).not.toHaveBeenCalled();
+  collector.emit('collect', click);
+  await vi.waitFor(() => expect(click.followUp).toHaveBeenCalled());
+  expect(likeSaved).toHaveBeenCalledWith('alice', tracks[1]);
+  expect(click.deferUpdate).toHaveBeenCalledOnce();
+  expect(JSON.stringify(click.followUp.mock.calls[0])).toContain('already');
+  expect(JSON.stringify(click.editReply.mock.calls[0])).toContain('Liked');
+  expect(context.music.info).not.toHaveBeenCalled();
+  expect(context.music.play).not.toHaveBeenCalled();
+  collector.emit('collect', click);
+  await vi.waitFor(() => expect(click.deferUpdate).toHaveBeenCalledTimes(2));
+  expect(likeSaved).toHaveBeenCalledTimes(1);
+  collector.emit('end');
+  await vi.waitFor(() => expect(editReply).toHaveBeenCalledTimes(2));
+  expect(options.filter(click)).toBe(false);
+  const json = JSON.stringify(editReply.mock.calls.at(-1)![0]);
+  expect(json).toContain('"disabled":true');
+});
+it('supports liking a single info result and reports persistence errors safely', async () => {
+  const { EventEmitter } = await import('node:events');
+  const collector = new EventEmitter();
+  const failure = new Error('private database detail');
+  const reportComponentError = vi.fn();
+  const likeSaved = vi
+    .fn()
+    .mockRejectedValueOnce(failure)
+    .mockResolvedValueOnce({ added: true });
+  const editReply = vi.fn(async () => ({
+    createMessageComponentCollector: () => collector,
+  }));
+  await info.execute(
+    {
+      id: 'single',
+      options: { getString: () => 'song', getInteger: () => null },
+      guildId: 'guild',
+      user: { id: 'alice' },
+      deferReply: vi.fn(),
+      editReply,
+    } as unknown as ChatInputCommandInteraction,
+    {
+      music: { info: async () => libraryTrack },
+      library: { likeSaved },
+      reportComponentError,
+      componentErrorMessage: () => 'Could not save the song.',
+    } as unknown as CommandExecutionContext,
+  );
+  const click = {
+    customId: 'kairo:info:single:like:0',
+    user: { id: 'alice' },
+    isButton: () => true,
+    deferUpdate: vi.fn(),
+    editReply: vi.fn(),
+    followUp: vi.fn(),
+  };
+  collector.emit('collect', click);
+  await vi.waitFor(() =>
+    expect(reportComponentError).toHaveBeenCalledWith(failure),
+  );
+  expect(JSON.stringify(click.followUp.mock.calls)).not.toContain(
+    'private database detail',
+  );
+  collector.emit('collect', click);
+  await vi.waitFor(() => expect(click.editReply).toHaveBeenCalled());
+  expect(likeSaved).toHaveBeenCalledWith('alice', libraryTrack);
+  expect(JSON.stringify(click.followUp.mock.calls)).toContain('Liked');
+});
