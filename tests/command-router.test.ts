@@ -200,6 +200,7 @@ describe('slash command handler and audits', () => {
       'settings',
       'help',
       'info',
+      'search',
       'auditlog',
       'playlist',
       'liked',
@@ -207,7 +208,7 @@ describe('slash command handler and audits', () => {
       'dislike',
       'menu',
     ]);
-    expect(handler.registrationData()).toHaveLength(17);
+    expect(handler.registrationData()).toHaveLength(18);
 
     const result = await run('help');
     const payload = lastPayload(result.reply) as {
@@ -421,4 +422,84 @@ describe('slash command handler and audits', () => {
       }),
     );
   });
+});
+
+it('registers a nickname from its parent builder and executes/audits the same command', async () => {
+  const { handler, music, audit, run } = setup();
+  expect(handler.get('search')).toBe(handler.get('info'));
+  expect(handler.get('search')).toBeDefined();
+  const registration = handler.registrationData();
+  const parent = registration.find((c) => c.name === 'info')!;
+  expect(registration.find((c) => c.name === 'search')).toEqual({
+    ...parent,
+    name: 'search',
+  });
+  expect(handler.list().filter((c) => c.data.name === 'info')).toHaveLength(1);
+  const result = await run('search');
+  expect(music.info).toHaveBeenCalledWith('song', 'guild', 'user');
+  expect(responseText(result)).toContain('Song');
+  expect(audit.list(1, 1)[0]).toMatchObject({
+    command: 'search',
+    success: true,
+  });
+});
+it('rejects duplicate or invalid nicknames instead of shadowing commands', async () => {
+  const { default: info } =
+    await import('../apps/bot/src/commands/utility/info.js');
+  const mutable = info as typeof info & { nicknames?: string[] };
+  const original = mutable.nicknames;
+  try {
+    mutable.nicknames = ['play'];
+    expect(() => setup()).toThrow(/Duplicate command/u);
+    mutable.nicknames = ['Bad Alias'];
+    expect(() => setup()).toThrow(/Invalid command nickname/u);
+  } finally {
+    if (original) mutable.nicknames = original;
+    else delete mutable.nicknames;
+  }
+});
+
+it('applies parent developer authorization to nickname execution', async () => {
+  const { handler, music, audit, run } = setup();
+  const parent = handler.get('info')!;
+  const original = parent.developerOnly;
+  try {
+    parent.developerOnly = true;
+    await run('search');
+    expect(music.info).not.toHaveBeenCalled();
+    expect(audit.list(1, 1)[0]).toMatchObject({
+      command: 'search',
+      success: false,
+      errorCode: 'UNAUTHORIZED',
+    });
+  } finally {
+    if (original === undefined) delete parent.developerOnly;
+    else parent.developerOnly = original;
+  }
+});
+it('shows nicknames under the single parent help entry', async () => {
+  const { handler } = setup();
+  const { EventEmitter } = await import('node:events');
+  const collector = new EventEmitter();
+  const reply = vi.fn(async () => ({
+    resource: { message: { createMessageComponentCollector: () => collector } },
+  }));
+  await handler.execute({
+    commandName: 'help',
+    user: { id: 'user' },
+    guildId: 'guild',
+    reply,
+  } as unknown as ChatInputCommandInteraction);
+  const update = vi.fn();
+  collector.emit('collect', {
+    user: { id: 'user' },
+    customId: 'help-category',
+    values: ['Utility'],
+    isStringSelectMenu: () => true,
+    update,
+  });
+  await vi.waitFor(() => expect(update).toHaveBeenCalled());
+  const payload = JSON.stringify(update.mock.calls[0]);
+  expect(payload).toContain('Aliases: /search');
+  expect(payload.match(/\/info <query>/gu)).toHaveLength(1);
 });

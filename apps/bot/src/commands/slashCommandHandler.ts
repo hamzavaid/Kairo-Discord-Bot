@@ -142,6 +142,7 @@ const builtInCommands: readonly SlashCommand[] = [
 
 export class SlashCommandHandler {
   readonly commands = new Collection<string, SlashCommand>();
+  private readonly nicknames = new Map<string, SlashCommand>();
 
   constructor(private readonly options: SlashCommandHandlerOptions) {
     for (const command of builtInCommands) {
@@ -149,10 +150,19 @@ export class SlashCommandHandler {
         throw new Error(`Duplicate command: ${command.data.name}`);
       this.commands.set(command.data.name, command);
     }
+    for (const command of this.commands.values()) {
+      for (const nickname of command.nicknames ?? []) {
+        if (!/^[a-z0-9_-]{1,32}$/u.test(nickname))
+          throw new Error(`Invalid command nickname: ${nickname}`);
+        if (this.commands.has(nickname) || this.nicknames.has(nickname))
+          throw new Error(`Duplicate command: ${nickname}`);
+        this.nicknames.set(nickname, command);
+      }
+    }
   }
 
   get(name: string): SlashCommand | undefined {
-    return this.commands.get(name);
+    return this.commands.get(name) ?? this.nicknames.get(name);
   }
 
   list(): SlashCommand[] {
@@ -160,11 +170,25 @@ export class SlashCommandHandler {
   }
 
   names(): string[] {
-    return [...this.commands.keys()];
+    return this.list().flatMap((command) => [
+      command.data.name,
+      ...(command.nicknames ?? []),
+    ]);
   }
 
   registrationData(): RESTPostAPIChatInputApplicationCommandsJSONBody[] {
-    return this.list().map((command) => command.data.toJSON());
+    return this.list().flatMap((command) => {
+      const data = command.data.toJSON();
+      return [
+        data,
+        ...(command.nicknames ?? []).map((name) => {
+          const alias = { ...data, name };
+          // Parent name translations must not turn the alias back into the parent.
+          delete alias.name_localizations;
+          return alias;
+        }),
+      ];
+    });
   }
 
   async register(
@@ -183,7 +207,7 @@ export class SlashCommandHandler {
     const commandName = interaction.commandName;
     const userId = interaction.user.id;
     const guildId = interaction.guildId ?? undefined;
-    const command = this.commands.get(commandName);
+    const command = this.get(commandName);
 
     let success = false;
     let errorCode: string | undefined;

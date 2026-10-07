@@ -78,7 +78,11 @@ function createCategoryContainer(
           entries
             .map(
               (command) =>
-                `**${command.usage}**\n` + `-# ${command.data.description}`,
+                `**${command.usage}**\n` +
+                `-# ${command.data.description}` +
+                (command.nicknames?.length
+                  ? `\nAliases: ${command.nicknames.map((name) => `/${name}`).join(', ')}`
+                  : ''),
             )
             .join('\n\n'),
       ),

@@ -26,6 +26,7 @@ const command: SlashCommand = {
         .setMinValue(1)
         .setMaxValue(25),
     ),
+  nicknames: ['search'],
   usage: '/info <query> [searchs]',
   category: 'Utility',
   async execute(interaction, context) {

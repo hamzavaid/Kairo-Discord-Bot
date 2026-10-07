@@ -34,6 +34,7 @@ export interface SlashCommandData {
 
 export interface SlashCommand {
   data: SlashCommandData;
+  nicknames?: readonly string[];
   usage: string;
   category: CommandCategory;
   developerOnly?: boolean;
