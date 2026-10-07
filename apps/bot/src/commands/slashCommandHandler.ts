@@ -140,6 +140,33 @@ const builtInCommands: readonly SlashCommand[] = [
   menuCommand,
 ];
 
+/** Build deployment payloads without constructing runtime services. */
+export function commandRegistrationData(
+  commands: readonly SlashCommand[] = builtInCommands,
+): RESTPostAPIChatInputApplicationCommandsJSONBody[] {
+  const names = new Set<string>();
+  for (const command of commands) {
+    for (const name of [command.data.name, ...(command.nicknames ?? [])]) {
+      if (!/^[a-z0-9_-]{1,32}$/u.test(name))
+        throw new Error(`Invalid command nickname: ${name}`);
+      if (names.has(name)) throw new Error(`Duplicate command: ${name}`);
+      names.add(name);
+    }
+  }
+  return commands.flatMap((command) => {
+    const data = command.data.toJSON();
+    return [
+      data,
+      ...(command.nicknames ?? []).map((name) => {
+        const alias = { ...data, name };
+        // Parent name translations must not turn the alias back into the parent.
+        delete alias.name_localizations;
+        return alias;
+      }),
+    ];
+  });
+}
+
 export class SlashCommandHandler {
   readonly commands = new Collection<string, SlashCommand>();
   private readonly nicknames = new Map<string, SlashCommand>();
@@ -177,18 +204,7 @@ export class SlashCommandHandler {
   }
 
   registrationData(): RESTPostAPIChatInputApplicationCommandsJSONBody[] {
-    return this.list().flatMap((command) => {
-      const data = command.data.toJSON();
-      return [
-        data,
-        ...(command.nicknames ?? []).map((name) => {
-          const alias = { ...data, name };
-          // Parent name translations must not turn the alias back into the parent.
-          delete alias.name_localizations;
-          return alias;
-        }),
-      ];
-    });
+    return commandRegistrationData(this.list());
   }
 
   async register(
