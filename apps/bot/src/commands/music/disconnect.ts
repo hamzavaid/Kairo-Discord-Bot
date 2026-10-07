@@ -7,6 +7,7 @@ const command: SlashCommand = {
     .setName('disconnect')
     .setDescription('Leave voice and clear playback'),
   usage: '/disconnect',
+  nicknames: ['leave'],
   category: 'Music',
   async execute(interaction, context) {
     await context.music.disconnect(guild(interaction));

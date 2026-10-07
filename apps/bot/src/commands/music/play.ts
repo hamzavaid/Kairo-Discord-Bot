@@ -14,6 +14,7 @@ const command: SlashCommand = {
         .setRequired(true),
     ),
   usage: '/play <query>',
+  nicknames: ['p'],
   category: 'Music',
   async execute(interaction, context) {
     await interaction.deferReply();

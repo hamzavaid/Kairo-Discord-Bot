@@ -9,6 +9,7 @@ const command: SlashCommand = {
       option.setName('page').setDescription('Audit page number').setMinValue(1),
     ),
   usage: '/auditlog [page]',
+  nicknames: ['log'],
   category: 'Developer',
   developerOnly: true,
   async execute(interaction, context) {

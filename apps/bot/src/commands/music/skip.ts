@@ -7,6 +7,7 @@ const command: SlashCommand = {
     .setName('skip')
     .setDescription('Skip the current song'),
   usage: '/skip',
+  nicknames: ['s', 'next'],
   category: 'Music',
   async execute(interaction, context) {
     await context.music.skip(controlVoice(interaction, context.music));

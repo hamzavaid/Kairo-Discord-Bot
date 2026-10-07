@@ -12,6 +12,7 @@ const command: SlashCommand = {
         .setDescription('Song query; omit for the current track'),
     ),
   usage: '/like [query]',
+  nicknames: ['heart'],
   category: 'Library',
   async execute(interaction, context) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
