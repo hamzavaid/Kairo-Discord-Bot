@@ -246,3 +246,17 @@ it('returns bounded canonical info results through the parser without preparing 
     service.infoResults('none', 'guild', 'user', 2),
   ).rejects.toMatchObject({ code: 'NO_SEARCH_RESULTS' });
 });
+
+it('exposes player snapshots and forwards previous through the public engine adapter', async () => {
+  const { engine, service } = setup();
+  const previous = vi.fn(async () => ({
+    current: { track: track('prior') },
+    upcoming: [],
+  }));
+  Object.assign(engine, { previous });
+  expect(service.playback('guild')).toEqual({ state: 'DISCONNECTED' });
+  expect(await service.previous('guild')).toMatchObject({
+    current: { track: { title: 'Song prior' } },
+  });
+  expect(previous).toHaveBeenCalledWith('guild');
+});

@@ -163,6 +163,14 @@ export class MusicService {
     return this.client.getQueue(guildId);
   }
 
+  playback(guildId: string) {
+    return this.client.getPlayback(guildId);
+  }
+
+  previous(guildId: string) {
+    return this.client.previous(guildId);
+  }
+
   pause(guildId: string) {
     return this.client.pause(guildId);
   }

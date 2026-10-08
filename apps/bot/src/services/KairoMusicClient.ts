@@ -74,6 +74,10 @@ export class KairoMusicClient {
     return this.engine.skip(guildId);
   }
 
+  previous(guildId: string): Promise<QueueSnapshot> {
+    return this.engine.previous(guildId);
+  }
+
   stop(guildId: string): Promise<QueueSnapshot> {
     return this.engine.stop(guildId);
   }

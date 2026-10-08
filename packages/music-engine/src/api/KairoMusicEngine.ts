@@ -403,6 +403,11 @@ export function createKairoMusicEngine(
     },
     previous(guildId) {
       return lock(guildId).runExclusive(async () => {
+        if (!queues.snapshot(guildId).history.length)
+          throw new MusicError(
+            'QUEUE_EMPTY',
+            'No previous track is available.',
+          );
         sessions.get(guildId)?.stop();
         const snapshot = await queues.previous(guildId);
         sync(guildId, snapshot);

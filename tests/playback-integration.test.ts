@@ -185,3 +185,38 @@ describe('Phase 5 public playback integration with mocked Discord transport', ()
     await engine.shutdown();
   });
 });
+
+it('preserves active audio when previous history is empty and restores history in order', async () => {
+  const engine = createKairoMusicEngine({
+    fixtureAudio: { a: { packets }, b: { packets } },
+    playbackRuntime,
+  });
+  try {
+    await engine.connectVoice(target);
+    await engine.enqueueMany({
+      guildId,
+      tracks: [track('a'), track('b')],
+      enqueuedBy: 'user',
+    });
+    await vi.waitFor(() =>
+      expect(engine.getPlayback(guildId).state).toBe('PLAYING'),
+    );
+    const before = engine.getPlayback(guildId);
+    await expect(engine.previous(guildId)).rejects.toMatchObject({
+      code: 'QUEUE_EMPTY',
+    });
+    expect(engine.getPlayback(guildId)).toEqual(before);
+    await engine.skip(guildId);
+    await vi.waitFor(() =>
+      expect(engine.getPlayback(guildId).state).toBe('PLAYING'),
+    );
+    const restored = await engine.previous(guildId);
+    expect(restored.current?.track.sourceId).toBe('a');
+    expect(restored.upcoming.map((e) => e.track.sourceId)).toEqual(['b']);
+    await vi.waitFor(() =>
+      expect(engine.getPlayback(guildId).state).toBe('PLAYING'),
+    );
+  } finally {
+    await engine.shutdown();
+  }
+});
