@@ -46,8 +46,14 @@ export class KairoMusicClient {
     guildId: string,
     track: Track,
     enqueuedBy: string,
+    position?: 'next' | 'last',
   ): Promise<QueueSnapshot> {
-    return this.engine.enqueue({ guildId, track, enqueuedBy });
+    return this.engine.enqueue({
+      guildId,
+      track,
+      enqueuedBy,
+      ...(position === undefined ? {} : { position }),
+    });
   }
 
   connectVoice(target: VoiceTarget): Promise<PlaybackSnapshot> {
@@ -72,6 +78,10 @@ export class KairoMusicClient {
 
   skip(guildId: string): Promise<QueueSnapshot> {
     return this.engine.skip(guildId);
+  }
+
+  shuffle(guildId: string): Promise<QueueSnapshot> {
+    return this.engine.shuffle(guildId);
   }
 
   previous(guildId: string): Promise<QueueSnapshot> {

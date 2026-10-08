@@ -91,6 +91,10 @@ function createInteraction(name: string, options: InteractionOptions = {}) {
 
 function setup(reportError?: ErrorReporter) {
   const music = {
+    shuffle: vi.fn().mockResolvedValue({ upcoming: [{}, {}] }),
+    playNext: vi
+      .fn()
+      .mockResolvedValue({ track: { title: 'Priority song' }, position: 1 }),
     play: vi.fn().mockResolvedValue({
       track: { title: 'Song', artists: [{ name: 'Artist' }] },
       position: 0,
@@ -191,6 +195,8 @@ describe('slash command handler and audits', () => {
     expect(handler.names()).toEqual([
       'play',
       'p',
+      'playnext',
+      'shuffle',
       'player',
       'pause',
       'resume',
@@ -215,7 +221,7 @@ describe('slash command handler and audits', () => {
       'dislike',
       'menu',
     ]);
-    expect(handler.registrationData()).toHaveLength(25);
+    expect(handler.registrationData()).toHaveLength(27);
 
     const result = await run('help');
     const payload = lastPayload(result.reply) as {
@@ -509,4 +515,36 @@ it('shows nicknames under the single parent help entry', async () => {
   const payload = JSON.stringify(update.mock.calls[0]);
   expect(payload).toContain('Aliases: /search');
   expect(payload.match(/\/info <query>/gu)).toHaveLength(1);
+});
+
+it('registers and routes shuffle and playnext through MusicService with voice validation', async () => {
+  const { handler, music, run, audit } = setup();
+  expect(
+    handler.registrationData().find((c) => c.name === 'playnext')?.options,
+  ).toEqual([expect.objectContaining({ name: 'query', required: true })]);
+  const result = await run('playnext');
+  expect(result.deferReply).toHaveBeenCalledOnce();
+  expect(music.playNext).toHaveBeenCalledWith(
+    expect.objectContaining({
+      query: 'song',
+      userId: 'user',
+      voiceTarget: expect.objectContaining({ channelId: 'voice' }),
+    }),
+  );
+  expect(responseText(result)).toContain('next');
+  expect(responseText(await run('shuffle'))).toContain('Shuffled');
+  expect(music.shuffle).toHaveBeenCalledWith('guild');
+  expect(music.assertVoiceChannel).toHaveBeenCalled();
+  expect(audit.list(1, 1)[0]).toMatchObject({
+    command: 'shuffle',
+    success: true,
+  });
+  music.shuffle.mockClear();
+  music.playNext.mockClear();
+  for (const name of ['playnext', 'shuffle']) {
+    await run(name, { voiceChannelId: undefined });
+    expect(audit.list(1, 1)[0]?.errorCode).toBe('USER_NOT_IN_VOICE');
+  }
+  expect(music.shuffle).not.toHaveBeenCalled();
+  expect(music.playNext).not.toHaveBeenCalled();
 });

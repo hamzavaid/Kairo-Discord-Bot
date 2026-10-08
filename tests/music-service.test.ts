@@ -260,3 +260,46 @@ it('exposes player snapshots and forwards previous through the public engine ada
   });
   expect(previous).toHaveBeenCalledWith('guild');
 });
+
+it('prepares play-next through the existing parser and queues at the front even when the same song is current', async () => {
+  const { engine, service } = setup();
+  engine.getPlayback.mockReturnValue({ state: 'PLAYING' });
+  engine.enqueue.mockResolvedValue({
+    current: { track: track('one') },
+    upcoming: [{ track: track('one') }, { track: track('two') }],
+  });
+  const result = await service.playNext({
+    guildId: 'guild',
+    userId: 'user',
+    query: 'song',
+    voiceTarget: target,
+  });
+  expect(engine.parse).toHaveBeenCalled();
+  expect(engine.preparePlayable).toHaveBeenCalled();
+  expect(engine.enqueue).toHaveBeenCalledWith({
+    guildId: 'guild',
+    track: track('one'),
+    enqueuedBy: 'user',
+    position: 'next',
+  });
+  expect(result.position).toBe(1);
+  expect(engine.connectVoice).not.toHaveBeenCalled();
+});
+it('connects and starts play-next from idle and forwards shuffle through the public API', async () => {
+  const { engine, service } = setup();
+  expect(
+    (
+      await service.playNext({
+        guildId: 'guild',
+        userId: 'user',
+        query: 'song',
+        voiceTarget: target,
+      })
+    ).position,
+  ).toBe(0);
+  expect(engine.connectVoice).toHaveBeenCalledWith(target);
+  const shuffle = vi.fn(async () => ({ current: undefined, upcoming: [] }));
+  Object.assign(engine, { shuffle });
+  await service.shuffle('guild');
+  expect(shuffle).toHaveBeenCalledWith('guild');
+});

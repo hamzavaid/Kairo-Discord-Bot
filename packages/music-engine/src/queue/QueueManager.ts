@@ -48,9 +48,15 @@ export class QueueManager {
     guildId: string,
     tracks: readonly Track[],
     enqueuedBy: string,
+    position: 'next' | 'last' = 'last',
   ): Promise<QueueSnapshot> {
     const queue = this.queue(guildId);
     return queue.mutex.runExclusive(() => {
+      if (position !== 'next' && position !== 'last')
+        throw new MusicError(
+          'INVALID_QUERY',
+          'Choose a valid queue insertion position.',
+        );
       if (!enqueuedBy)
         throw new MusicError('INVALID_QUERY', 'A requester is required.');
       if (
@@ -64,7 +70,7 @@ export class QueueManager {
         enqueuedBy,
         enqueuedAt: this.now(),
       }));
-      queue.enqueue(entries);
+      queue.enqueue(entries, position);
       return queue.snapshot();
     });
   }

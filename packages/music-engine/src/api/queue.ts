@@ -23,12 +23,16 @@ export interface EnqueueRequest {
   guildId: string;
   track: Track;
   enqueuedBy: string;
+  /** Insert before upcoming entries without interrupting current playback. Defaults to last. */
+  position?: 'next' | 'last';
 }
 
 export interface EnqueueManyRequest {
   guildId: string;
   tracks: readonly Track[];
   enqueuedBy: string;
+  /** Insert before upcoming entries without interrupting current playback. Defaults to last. */
+  position?: 'next' | 'last';
 }
 
 export interface RemoveRequest {

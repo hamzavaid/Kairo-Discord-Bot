@@ -220,3 +220,39 @@ it('preserves active audio when previous history is empty and restores history i
     await engine.shutdown();
   }
 });
+
+it('queues play-next without restarting current audio, then plays it before the FIFO tail', async () => {
+  const engine = createKairoMusicEngine({
+    fixtureAudio: { a: { packets }, b: { packets }, next: { packets } },
+    playbackRuntime,
+  });
+  try {
+    await engine.connectVoice(target);
+    const before = await engine.enqueueMany({
+      guildId,
+      tracks: [track('a'), track('b')],
+      enqueuedBy: 'user',
+    });
+    await vi.waitFor(() =>
+      expect(engine.getPlayback(guildId).state).toBe('PLAYING'),
+    );
+    const player = mocks.players.at(-1) as { plays: unknown[] };
+    const after = await engine.enqueue({
+      guildId,
+      track: track('next'),
+      enqueuedBy: 'user',
+      position: 'next',
+    });
+    expect(after.current?.id).toBe(before.current?.id);
+    expect(after.generation).toBe(before.generation);
+    expect(player.plays).toHaveLength(1);
+    await engine.skip(guildId);
+    await vi.waitFor(() => expect(player.plays).toHaveLength(2));
+    expect(engine.getPlayback(guildId).current?.track.sourceId).toBe('next');
+    expect(
+      engine.getQueue(guildId).upcoming.map((e) => e.track.sourceId),
+    ).toEqual(['b']);
+  } finally {
+    await engine.shutdown();
+  }
+});

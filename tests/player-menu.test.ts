@@ -53,6 +53,9 @@ async function setup(upcoming = 13) {
       queue.current = queue.upcoming.shift();
       queue.generation++;
     }),
+    shuffle: vi.fn(async () => {
+      queue.upcoming.reverse();
+    }),
     previous: vi.fn(async () => {
       if (queue.current) queue.upcoming.unshift(queue.current);
       queue.current = queue.history.pop();
@@ -437,4 +440,27 @@ it('keeps Close available while an add modal is pending and blocks its late subm
   await new Promise((resolve) => setImmediate(resolve));
   expect(s.music.play).not.toHaveBeenCalled();
   expect(s.controls().every((control) => control.disabled)).toBe(true);
+});
+
+it('shuffles upcoming tracks from the player through MusicService and rechecks voice', async () => {
+  const s = await setup(3);
+  const current = structuredClone(s.queue.current);
+  expect(s.button('Shuffle').disabled).toBe(false);
+  await s.click('Shuffle');
+  expect(s.music.shuffle).toHaveBeenCalledWith('guild');
+  expect(s.queue.current).toEqual(current);
+  expect(s.queue.upcoming.map((e) => e.track.title)).toEqual([
+    'Song 4',
+    'Song 3',
+    'Song 2',
+  ]);
+  s.music.shuffle.mockClear();
+  s.guild.voiceStates.cache.set('alice', { channelId: 'other' });
+  await s.click('Shuffle');
+  expect(s.music.shuffle).not.toHaveBeenCalled();
+  expect(s.context.reportComponentError).toHaveBeenCalled();
+});
+it('disables player shuffle when fewer than two upcoming songs exist', async () => {
+  const s = await setup(1);
+  expect(s.button('Shuffle').disabled).toBe(true);
 });

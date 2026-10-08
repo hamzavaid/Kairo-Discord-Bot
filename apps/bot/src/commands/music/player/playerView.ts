@@ -113,6 +113,7 @@ export function playerView(
             ButtonStyle.Primary,
           ),
       controls('skip', 'Skip', !current),
+      controls('shuffle', 'Shuffle', queue.upcoming.length < 2),
       controls(
         'stop',
         'Stop',

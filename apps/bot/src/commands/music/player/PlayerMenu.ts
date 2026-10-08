@@ -22,6 +22,7 @@ const actions = new Set([
   'pause',
   'resume',
   'skip',
+  'shuffle',
   'stop',
   'like',
   'add',
@@ -204,13 +205,20 @@ export class PlayerMenu {
         'The song changed. Check the refreshed player and try again.',
       );
     const guildId = this.interaction.guildId!;
-    if (['previous', 'pause', 'resume', 'skip', 'stop'].includes(action.name))
+    if (
+      ['previous', 'pause', 'resume', 'skip', 'stop', 'shuffle'].includes(
+        action.name,
+      )
+    )
       voiceTarget(i, this.context);
     if (action.name === 'pause') await this.context.music.pause(guildId);
     else if (action.name === 'resume') await this.context.music.resume(guildId);
     else if (action.name === 'previous')
       await this.context.music.previous(guildId);
-    else if (action.name === 'skip') await this.context.music.skip(guildId);
+    else if (action.name === 'shuffle') {
+      await this.context.music.shuffle(guildId);
+      this.state.notice = 'Shuffled the upcoming queue.';
+    } else if (action.name === 'skip') await this.context.music.skip(guildId);
     else if (action.name === 'stop') await this.context.music.stop(guildId);
     else if (action.name === 'like') {
       const entry = this.data.queue.current;

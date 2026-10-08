@@ -53,7 +53,18 @@ export class MusicService {
     throw new MusicError('NO_SEARCH_RESULTS', 'No matching song was found.');
   }
 
-  async play(input: PlayInput): Promise<PlayOutcome> {
+  play(input: PlayInput): Promise<PlayOutcome> {
+    return this.playAt(input);
+  }
+
+  playNext(input: PlayInput): Promise<PlayOutcome> {
+    return this.playAt(input, 'next');
+  }
+
+  private async playAt(
+    input: PlayInput,
+    insertion?: 'next',
+  ): Promise<PlayOutcome> {
     const { guildId, userId, query, voiceTarget } = input;
     const state = this.client.getPlayback(guildId).state;
     const connected = state !== 'DISCONNECTED';
@@ -69,9 +80,13 @@ export class MusicService {
       await this.client.connectVoice(voiceTarget);
       this.channels.set(guildId, voiceTarget.channelId);
     }
-    const queue = await this.client.enqueue(guildId, track, userId);
+    const queue = await this.client.enqueue(guildId, track, userId, insertion);
+    // A single insertion either becomes current (no upcoming entries), or
+    // occupies the requested end of the upcoming queue in this atomic snapshot.
     const position =
-      queue.current?.track.id === track.id ? 0 : queue.upcoming.length;
+      insertion === 'next' && queue.upcoming.length > 0
+        ? 1
+        : queue.upcoming.length;
     return { track, position };
   }
 
@@ -165,6 +180,10 @@ export class MusicService {
 
   playback(guildId: string) {
     return this.client.getPlayback(guildId);
+  }
+
+  shuffle(guildId: string) {
+    return this.client.shuffle(guildId);
   }
 
   previous(guildId: string) {

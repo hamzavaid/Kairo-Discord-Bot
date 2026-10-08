@@ -25,14 +25,15 @@ export class GuildQueue {
     };
   }
 
-  enqueue(entries: QueueEntry[]): void {
+  enqueue(entries: QueueEntry[], position: 'next' | 'last' = 'last'): void {
     if (!entries.length) return;
     const pending = [...entries];
     if (!this.current) {
       this.current = pending.shift();
       this.generation += 1;
     }
-    this.upcoming.push(...pending);
+    if (position === 'next') this.upcoming.unshift(...pending);
+    else this.upcoming.push(...pending);
   }
 
   advance(expectedGeneration: number, cause: 'skip' | 'track-ended'): boolean {

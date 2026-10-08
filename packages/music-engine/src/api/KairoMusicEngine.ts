@@ -345,6 +345,7 @@ export function createKairoMusicEngine(
         request.guildId,
         request.tracks,
         request.enqueuedBy,
+        request.position,
       );
       sync(request.guildId, snapshot);
       return snapshot;
@@ -363,6 +364,9 @@ export function createKairoMusicEngine(
         guildId: request.guildId,
         tracks: [request.track],
         enqueuedBy: request.enqueuedBy,
+        ...(request.position === undefined
+          ? {}
+          : { position: request.position }),
       });
     },
     enqueueMany,

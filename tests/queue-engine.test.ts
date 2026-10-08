@@ -168,3 +168,70 @@ describe('Phase 4 public queue API', () => {
     expect(removed.upcoming).toEqual([]);
   });
 });
+
+it('inserts play-next atomically ahead of upcoming while preserving current and FIFO tail', async () => {
+  const engine = createKairoMusicEngine();
+  const before = await engine.enqueueMany({
+    guildId,
+    tracks: [track('a'), track('b'), track('c')],
+    enqueuedBy: 'user',
+  });
+  const after = await engine.enqueue({
+    guildId,
+    track: track('next'),
+    enqueuedBy: 'user',
+    position: 'next',
+  });
+  expect(after.current).toEqual(before.current);
+  expect(after.generation).toBe(before.generation);
+  expect(after.upcoming.map((e) => e.track.sourceId)).toEqual([
+    'next',
+    'b',
+    'c',
+  ]);
+  const latest = await engine.enqueue({
+    guildId,
+    track: track('latest'),
+    enqueuedBy: 'user',
+    position: 'next',
+  });
+  expect(latest.upcoming.map((e) => e.track.sourceId)).toEqual([
+    'latest',
+    'next',
+    'b',
+    'c',
+  ]);
+  await engine.shutdown();
+});
+it('starts a play-next entry when empty and retains priority under concurrent advancement', async () => {
+  const manager = new QueueManager();
+  const first = await manager.enqueueMany(
+    guildId,
+    [track('a')],
+    'user',
+    'next',
+  );
+  expect(first.current?.track.sourceId).toBe('a');
+  await manager.enqueueMany(guildId, [track('b')], 'user');
+  await Promise.all([
+    manager.enqueueMany(guildId, [track('next')], 'user', 'next'),
+    manager.advance(guildId, first.generation, 'skip'),
+    manager.advance(guildId, first.generation, 'track-ended'),
+  ]);
+  const state = manager.snapshot(guildId);
+  expect(state.current?.track.sourceId).toBe('next');
+  expect(state.upcoming.map((e) => e.track.sourceId)).toEqual(['b']);
+  expect(state.history.map((e) => e.track.sourceId)).toEqual(['a']);
+});
+it('applies queue limits and insertion validation without partially mutating priority entries', async () => {
+  const manager = new QueueManager({ maxEntries: 2 });
+  await manager.enqueueMany(guildId, [track('a'), track('b')], 'user');
+  const before = manager.snapshot(guildId);
+  await expect(
+    manager.enqueueMany(guildId, [track('next')], 'user', 'next'),
+  ).rejects.toMatchObject({ code: 'QUEUE_LIMIT' });
+  await expect(
+    manager.enqueueMany(guildId, [], 'user', 'invalid' as never),
+  ).rejects.toMatchObject({ code: 'INVALID_QUERY' });
+  expect(manager.snapshot(guildId)).toEqual(before);
+});
