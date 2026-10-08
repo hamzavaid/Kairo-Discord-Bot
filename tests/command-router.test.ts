@@ -191,6 +191,7 @@ describe('slash command handler and audits', () => {
     expect(handler.names()).toEqual([
       'play',
       'p',
+      'player',
       'pause',
       'resume',
       'skip',
@@ -214,7 +215,7 @@ describe('slash command handler and audits', () => {
       'dislike',
       'menu',
     ]);
-    expect(handler.registrationData()).toHaveLength(24);
+    expect(handler.registrationData()).toHaveLength(25);
 
     const result = await run('help');
     const payload = lastPayload(result.reply) as {

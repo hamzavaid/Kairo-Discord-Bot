@@ -5,7 +5,8 @@ export class CommandError extends Error {
       | 'WRONG_VOICE_CHANNEL'
       | 'UNAUTHORIZED'
       | 'GUILD_ONLY'
-      | 'MISSING_QUERY',
+      | 'MISSING_QUERY'
+      | 'STALE_PLAYER',
     message: string,
   ) {
     super(message);

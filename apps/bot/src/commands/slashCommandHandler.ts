@@ -12,6 +12,7 @@ import auditlogCommand from './developer/auditlog.js';
 import disconnectCommand from './music/disconnect.js';
 import pauseCommand from './music/pause.js';
 import playCommand from './music/play.js';
+import playerCommand from './music/player.js';
 import queueCommand from './music/queue.js';
 import resumeCommand from './music/resume.js';
 import skipCommand from './music/skip.js';
@@ -122,6 +123,7 @@ async function sendFailure(
 
 const builtInCommands: readonly SlashCommand[] = [
   playCommand,
+  playerCommand,
   pauseCommand,
   resumeCommand,
   skipCommand,

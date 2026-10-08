@@ -54,6 +54,17 @@ function artwork(value?: string): string | undefined {
     /* Omit invalid image URLs. */
   }
 }
+/** Canonical video pictures or allowlisted, unsigned catalog artwork. */
+export function trackArtwork(track: Track): string | undefined {
+  if (
+    (track.sourceProvider === 'youtube-sr' ||
+      track.sourceProvider === 'youtube-api') &&
+    track.sourceId &&
+    /^[A-Za-z0-9_-]{11}$/u.test(track.sourceId)
+  )
+    return `https://i.ytimg.com/vi/${track.sourceId}/hqdefault.jpg`;
+  return artwork(track.artworkUrl);
+}
 export function infoCard(track: Track): ContainerBuilder {
   const source = resourceLink(track.sourceProvider, track.sourceId);
   const title = uiText(track.title, 350);
@@ -72,9 +83,7 @@ export function infoCard(track: Track): ContainerBuilder {
     /^[A-Za-z0-9_-]{11}$/u.test(track.sourceId)
       ? track.sourceId
       : undefined;
-  const image = videoId
-    ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
-    : artwork(track.artworkUrl);
+  const image = trackArtwork(track);
   if (videoId && image) {
     card
       .addTextDisplayComponents(header)
