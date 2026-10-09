@@ -135,7 +135,10 @@ describe('Discord slash command handling and registration', () => {
         }),
       }),
     );
-    expect(built.editReply).toHaveBeenCalledWith({ content: 'Playing: Song' });
+    expect(built.editReply).toHaveBeenCalledWith({
+      content: 'Playing: Song',
+      allowedMentions: { parse: [] },
+    });
   });
 
   it('sends the help command as an ephemeral Components V2 reply', async () => {

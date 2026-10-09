@@ -2,15 +2,16 @@ import { SlashCommandBuilder } from 'discord.js';
 import { CommandError } from '../../errors.js';
 import { guild, query, userVoiceChannel } from '../guards.js';
 import type { SlashCommand } from '../types.js';
+import { playResponse } from './playResponse.js';
 
 const command: SlashCommand = {
   data: new SlashCommandBuilder()
     .setName('play')
-    .setDescription('Play or queue a song')
+    .setDescription('Play or queue a song or supported playlist')
     .addStringOption((option) =>
       option
         .setName('query')
-        .setDescription('Song name or supported track URL')
+        .setDescription('Song name, track URL or supported playlist/album URL')
         .setRequired(true),
     ),
   usage: '/play <query>',
@@ -40,10 +41,8 @@ const command: SlashCommand = {
 
     await context.onVoiceActivity?.(guildId);
     await interaction.editReply({
-      content:
-        result.position === 0
-          ? `Playing: ${result.track.title}`
-          : `Queued #${result.position}: ${result.track.title}`,
+      content: playResponse(result),
+      allowedMentions: { parse: [] },
     });
   },
 };

@@ -8,6 +8,7 @@ import {
   type MessageComponentInteraction,
   type ModalSubmitInteraction,
 } from 'discord.js';
+import { playResponse } from '../playResponse.js';
 import { CommandError } from '../../../errors.js';
 import { library, voiceTarget } from '../../library/helpers.js';
 import type { CommandExecutionContext } from '../../types.js';
@@ -296,10 +297,7 @@ export class PlayerMenu {
         voiceTarget: target,
       });
       await this.context.onVoiceActivity?.(target.guildId);
-      this.state.notice =
-        outcome.position === 0
-          ? `Playing: ${outcome.track.title}`
-          : `Queued: ${outcome.track.title}`;
+      this.state.notice = playResponse(outcome);
     } catch (error) {
       await this.failure(error, submitted);
     }

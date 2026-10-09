@@ -548,3 +548,29 @@ it('registers and routes shuffle and playnext through MusicService with voice va
   expect(music.shuffle).not.toHaveBeenCalled();
   expect(music.playNext).not.toHaveBeenCalled();
 });
+
+it('reports collection queue counts, unavailable entries and truncation in play responses', async () => {
+  const { music, run } = setup();
+  music.play.mockResolvedValueOnce({
+    track: { title: 'First', artists: [{ name: 'Artist' }] },
+    position: 0,
+    collection: {
+      title: 'Mix',
+      queued: 2,
+      importSummary: {
+        total: 5,
+        imported: 2,
+        skipped: 1,
+        failed: 1,
+        truncated: true,
+        partial: true,
+      },
+    },
+  } as never);
+  const text = responseText(await run('play'));
+  expect(text).toContain('2 songs');
+  expect(text).toContain('Mix');
+  expect(text).toContain('1 skipped');
+  expect(text).toContain('1 failed');
+  expect(text).toContain('limit');
+});

@@ -19,6 +19,9 @@ export interface PlayOutcome {
   track: Track;
   /** One-based upcoming position; zero means the track is current. */
   position: number;
+  collection?: Pick<TrackCollection, 'title' | 'importSummary'> & {
+    queued: number;
+  };
 }
 
 /** Bot-side orchestration. Music state and playback remain engine-owned. */
@@ -69,25 +72,65 @@ export class MusicService {
     const state = this.client.getPlayback(guildId).state;
     const connected = state !== 'DISCONNECTED';
     if (connected) this.assertVoiceChannel(guildId, voiceTarget.channelId);
-    const metadata = await this.resolve(query, guildId, userId);
-    const track = await this.client.preparePlayable(metadata);
-    if (!this.client.canPlay(track))
-      throw new MusicError(
-        'STREAM_UNAVAILABLE',
-        'No playable source is available.',
-      );
+    const parsed = await this.client.parse(query, guildId, userId, true);
+    let tracks: Track[];
+    const collection =
+      parsed.kind === 'collection' ? parsed.collection : undefined;
+    if (collection) {
+      if (!collection.tracks.length)
+        throw new MusicError(
+          'COLLECTION_EMPTY',
+          'The collection has no playable tracks.',
+        );
+      // Matching and stream acquisition happen only when each queued entry starts.
+      tracks = collection.tracks;
+    } else {
+      const metadata =
+        parsed.kind === 'track'
+          ? parsed.track
+          : parsed.kind === 'search'
+            ? parsed.candidates[0]
+            : undefined;
+      if (!metadata)
+        throw new MusicError(
+          'NO_SEARCH_RESULTS',
+          'No matching song was found.',
+        );
+      const track = await this.client.preparePlayable(metadata);
+      if (!this.client.canPlay(track))
+        throw new MusicError(
+          'STREAM_UNAVAILABLE',
+          'No playable source is available.',
+        );
+      tracks = [track];
+    }
     if (!connected) {
       await this.client.connectVoice(voiceTarget);
       this.channels.set(guildId, voiceTarget.channelId);
     }
-    const queue = await this.client.enqueue(guildId, track, userId, insertion);
-    // A single insertion either becomes current (no upcoming entries), or
-    // occupies the requested end of the upcoming queue in this atomic snapshot.
+    const queue = collection
+      ? await this.client.enqueueMany(guildId, tracks, userId, insertion)
+      : await this.client.enqueue(guildId, tracks[0]!, userId, insertion);
+    // If an empty queue consumed the first inserted entry as current, N - 1
+    // entries remain upcoming. Otherwise all N entries occupy the chosen end.
+    const appendedPosition = queue.upcoming.length - tracks.length + 1;
     const position =
-      insertion === 'next' && queue.upcoming.length > 0
-        ? 1
-        : queue.upcoming.length;
-    return { track, position };
+      appendedPosition <= 0 ? 0 : insertion === 'next' ? 1 : appendedPosition;
+    return {
+      track: tracks[0]!,
+      position,
+      ...(collection
+        ? {
+            collection: {
+              title: collection.title,
+              queued: tracks.length,
+              ...(collection.importSummary
+                ? { importSummary: collection.importSummary }
+                : {}),
+            },
+          }
+        : {}),
+    };
   }
 
   info(input: string, guildId: string, userId: string): Promise<Track> {

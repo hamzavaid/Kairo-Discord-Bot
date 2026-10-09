@@ -85,6 +85,7 @@ describe('Phase 6 MusicService', () => {
     });
     expect(engine.parse).toHaveBeenCalledWith({
       input: 'fixture track',
+      allowCollections: true,
       guildId: 'guild',
       requestedBy: 'user',
     });
@@ -302,4 +303,97 @@ it('connects and starts play-next from idle and forwards shuffle through the pub
   Object.assign(engine, { shuffle });
   await service.shuffle('guild');
   expect(shuffle).toHaveBeenCalledWith('guild');
+});
+
+it.each(['last', 'next'] as const)(
+  'queues parsed collections in order at %s without eagerly preparing all sources',
+  async (position) => {
+    const { engine, service } = setup();
+    const collection = {
+      id: 'spotify:mix',
+      sourceProvider: 'spotify',
+      title: 'Mix',
+      tracks: [track('one'), track('two')],
+      importSummary: {
+        imported: 2,
+        total: 5,
+        skipped: 1,
+        failed: 1,
+        truncated: true,
+        partial: true,
+      },
+    };
+    engine.parse.mockResolvedValue({ kind: 'collection', collection } as never);
+    engine.getPlayback.mockReturnValue({ state: 'PLAYING' });
+    const enqueueMany = vi.fn(async () => ({
+      current: { track: track('current') },
+      upcoming:
+        position === 'next'
+          ? [
+              { track: track('one') },
+              { track: track('two') },
+              { track: track('tail') },
+            ]
+          : [
+              { track: track('tail') },
+              { track: track('one') },
+              { track: track('two') },
+            ],
+    }));
+    Object.assign(engine, { enqueueMany });
+    const result = await (
+      position === 'next'
+        ? service.playNext.bind(service)
+        : service.play.bind(service)
+    )({
+      guildId: 'guild',
+      userId: 'user',
+      query: 'playlist URL',
+      voiceTarget: target,
+    });
+    expect(engine.parse).toHaveBeenCalledWith(
+      expect.objectContaining({ allowCollections: true }),
+    );
+    expect(enqueueMany).toHaveBeenCalledWith({
+      guildId: 'guild',
+      enqueuedBy: 'user',
+      tracks: collection.tracks,
+      ...(position === 'next' ? { position } : {}),
+    });
+    expect(engine.enqueue).not.toHaveBeenCalled();
+    expect(engine.preparePlayable).not.toHaveBeenCalled();
+    expect(engine.connectVoice).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      position: position === 'next' ? 1 : 2,
+      collection: {
+        title: 'Mix',
+        queued: 2,
+        importSummary: collection.importSummary,
+      },
+    });
+  },
+);
+it('rejects empty or failed collections before connecting or modifying the queue', async () => {
+  const { engine, service } = setup();
+  engine.parse.mockResolvedValueOnce({
+    kind: 'collection',
+    collection: { tracks: [] },
+  } as never);
+  const input = {
+    guildId: 'guild',
+    userId: 'user',
+    query: 'playlist URL',
+    voiceTarget: target,
+  };
+  await expect(service.play(input)).rejects.toMatchObject({
+    code: 'COLLECTION_EMPTY',
+  });
+  engine.parse.mockRejectedValueOnce(
+    new MusicError('COLLECTION_IMPORT_FAILED', 'safe failure'),
+  );
+  await expect(service.play(input)).rejects.toMatchObject({
+    code: 'COLLECTION_IMPORT_FAILED',
+  });
+  expect(engine.connectVoice).not.toHaveBeenCalled();
+  expect(engine.enqueue).not.toHaveBeenCalled();
 });

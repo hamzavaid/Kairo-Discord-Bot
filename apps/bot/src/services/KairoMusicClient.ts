@@ -30,8 +30,14 @@ export class KairoMusicClient {
     guildId: string,
     tracks: Track[],
     enqueuedBy: string,
+    position?: 'next' | 'last',
   ): Promise<QueueSnapshot> {
-    return this.engine.enqueueMany({ guildId, tracks, enqueuedBy });
+    return this.engine.enqueueMany({
+      guildId,
+      tracks,
+      enqueuedBy,
+      ...(position === undefined ? {} : { position }),
+    });
   }
 
   preparePlayable(track: Track): Promise<Track> {

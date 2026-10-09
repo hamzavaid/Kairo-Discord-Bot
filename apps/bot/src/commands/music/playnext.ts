@@ -1,6 +1,7 @@
 import { SlashCommandBuilder } from 'discord.js';
-import { display, voiceTarget } from '../library/helpers.js';
+import { voiceTarget } from '../library/helpers.js';
 import type { SlashCommand } from '../types.js';
+import { playResponse } from './playResponse.js';
 
 const command: SlashCommand = {
   data: new SlashCommandBuilder()
@@ -9,7 +10,7 @@ const command: SlashCommand = {
     .addStringOption((option) =>
       option
         .setName('query')
-        .setDescription('Song name or supported track URL')
+        .setDescription('Song name, track URL or supported playlist/album URL')
         .setRequired(true),
     ),
   usage: '/playnext <query>',
@@ -25,7 +26,7 @@ const command: SlashCommand = {
     });
     context.onVoiceActivity?.(target.guildId);
     await interaction.editReply({
-      content: `${result.position === 0 ? 'Playing' : 'Queued next'}: ${display(result.track.title, 150)}`,
+      content: playResponse(result, true),
       allowedMentions: { parse: [] },
     });
   },
