@@ -213,7 +213,7 @@ it('registers /player in Music and renders an owned dashboard with artwork, meta
   });
   expect(s.text()).toContain('hqdefault.jpg');
   expect(s.text()).toContain('Song 1');
-  expect(s.text()).toContain('PLAYING');
+  expect(s.text()).toContain('Playing');
   expect(s.text()).toContain('3:00');
   expect(s.text()).toContain('Page 1/2');
   const config = s.createCollector.mock.calls[0]![0] as {
@@ -463,4 +463,43 @@ it('shuffles upcoming tracks from the player through MusicService and rechecks v
 it('disables player shuffle when fewer than two upcoming songs exist', async () => {
   const s = await setup(1);
   expect(s.button('Shuffle').disabled).toBe(true);
+});
+
+it('renders a compact artwork section and separates transport, queue actions and session controls', async () => {
+  const s = await setup();
+  const card = JSON.parse(s.text()).components[0];
+  const section = card.components.find((c: { type: number }) => c.type === 9);
+  expect(section.accessory).toMatchObject({
+    type: 11,
+    media: { url: expect.stringContaining('hqdefault.jpg') },
+  });
+  expect(card.components.some((c: { type: number }) => c.type === 12)).toBe(
+    false,
+  );
+  const rows = card.components.filter((c: { type: number }) => c.type === 1);
+  expect(rows[0].components.map((c: { label: string }) => c.label)).toEqual([
+    'Previous',
+    'Pause',
+    'Skip',
+  ]);
+  expect(rows[1].components.map((c: { label: string }) => c.label)).toEqual([
+    'Shuffle',
+    'Like song',
+    'Add song',
+  ]);
+  expect(rows.at(-1).components.map((c: { label: string }) => c.label)).toEqual(
+    ['Refresh', 'Stop', 'Close'],
+  );
+  expect(rows[0].components[1].style).toBe(1);
+  expect(
+    rows[0].components.every((c: { emoji?: unknown }) => Boolean(c.emoji)),
+  ).toBe(true);
+  expect(s.text()).not.toContain('**State:**');
+  expect(s.text()).not.toContain('**Match:**');
+  const playingColor = card.accent_color;
+  await s.click('Pause');
+  expect(s.text()).toContain('Paused');
+  expect(JSON.parse(s.text()).components[0].accent_color).not.toBe(
+    playingColor,
+  );
 });
