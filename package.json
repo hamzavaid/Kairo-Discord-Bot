@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "build": "pnpm -r --if-present build",
-    "commands:global": "pnpm build && node apps/bot/dist/deploy-commands.js"
+    "commands:global": "pnpm build && node apps/bot/dist/deploy-commands.js",
+    "spotify:authorize": "pnpm build && node apps/bot/dist/authorize-spotify.js"
   },
   "devDependencies": {
     "@discordjs/voice": "0.19.2",

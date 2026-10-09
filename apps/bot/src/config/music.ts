@@ -1,5 +1,6 @@
 import type { EngineOptions } from '@kairo/music-engine';
 import type { Environment } from '@kairo/shared';
+import { saveSpotifyRefreshToken } from './spotifyAuthorization.js';
 
 function musicBrainzContact(value?: string): string | undefined {
   if (!value?.trim()) return undefined;
@@ -49,6 +50,12 @@ export function createBotMusicOptions(environment: Environment): EngineOptions {
           spotify: {
             clientId: environment.SPOTIFY_CLIENT_ID.trim(),
             clientSecret: environment.SPOTIFY_CLIENT_SECRET.trim(),
+            ...(environment.SPOTIFY_REFRESH_TOKEN?.trim()
+              ? {
+                  refreshToken: environment.SPOTIFY_REFRESH_TOKEN.trim(),
+                  onRefreshToken: saveSpotifyRefreshToken,
+                }
+              : {}),
           },
         }
       : {}),

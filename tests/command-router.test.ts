@@ -379,6 +379,8 @@ describe('slash command handler and audits', () => {
       'VOICE_JOIN_ERROR',
       'INVALID_PLAYBACK_TRANSITION',
       'PROVIDER_TIMEOUT',
+      'PROVIDER_AUTH_REQUIRED',
+      'PROVIDER_ACCESS_DENIED',
     ] as const) {
       music.info.mockRejectedValueOnce(new MusicError(code, 'unsafe detail'));
       const result = await run('info');

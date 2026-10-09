@@ -10,6 +10,8 @@ export type MusicErrorCode =
   | 'PROVIDER_UNAVAILABLE'
   | 'PARSER_CANCELLED'
   | 'PROVIDER_CONFIGURATION_ERROR'
+  | 'PROVIDER_AUTH_REQUIRED'
+  | 'PROVIDER_ACCESS_DENIED'
   | 'NO_RELIABLE_MATCH'
   | 'QUEUE_EMPTY'
   | 'QUEUE_LIMIT'
@@ -21,12 +23,20 @@ export type MusicErrorCode =
   | 'STREAM_TIMEOUT'
   | 'FFMPEG_ERROR';
 
+export interface ProviderDiagnostics {
+  provider?: string;
+  operation?: string;
+  httpStatus?: number;
+  reason?: 'http-error' | 'invalid-response' | 'response-too-large';
+}
+
 export class MusicError extends Error {
   constructor(
     readonly code: MusicErrorCode,
     message: string,
     readonly retryable = false,
     readonly correlationId?: string,
+    readonly diagnostics?: ProviderDiagnostics,
   ) {
     super(message);
     this.name = 'MusicError';

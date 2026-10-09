@@ -609,6 +609,7 @@ export function createKairoMusicEngine(
                 error.message,
                 error.retryable,
                 request.requestId,
+                error.diagnostics,
               )
             : new MusicError(
                 'PROVIDER_PARSE_ERROR',

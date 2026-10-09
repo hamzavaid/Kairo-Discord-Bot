@@ -32,6 +32,7 @@ const environmentSchema = z.object({
   YOUTUBE_API_KEY: z.string().optional(),
   SPOTIFY_CLIENT_ID: z.string().optional(),
   SPOTIFY_CLIENT_SECRET: z.string().optional(),
+  SPOTIFY_REFRESH_TOKEN: z.string().trim().optional(),
   MUSICBRAINZ_USER_AGENT: z.string().optional(),
   KAIRO_METADATA_PROVIDER: z.preprocess(
     (value) => (value === '' ? undefined : value),

@@ -23,6 +23,8 @@ export interface YouTubeApiOptions {
 export interface SpotifyOptions {
   clientId: string;
   clientSecret: string;
+  refreshToken?: string;
+  onRefreshToken?: (token: string) => Promise<void>;
   fetcher?: typeof fetch;
   timeoutMs?: number;
   searchCacheMs?: number;

@@ -33,14 +33,17 @@ const searchSchema = z.object({
 const tokenSchema = z.object({
   access_token: z.string().min(1),
   expires_in: z.number().positive(),
+  refresh_token: z.string().min(1).optional(),
 });
 
 export class SpotifyProvider implements MediaProvider {
   readonly id = 'spotify';
   readonly capabilities = { search: true, trackUrl: true };
-  private token?: { value: string; expiresAt: number };
+  private refreshToken: string | undefined;
+  private token: { value: string; expiresAt: number } | undefined;
   private readonly cache = new TimedCache<ProviderTrack[]>(256, Date.now);
   constructor(private readonly options: SpotifyOptions) {
+    this.refreshToken = options.refreshToken?.trim() || undefined;
     if (!options.clientId?.trim() || !options.clientSecret?.trim())
       throw new Error(
         'SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET are required for spotify.',
@@ -78,41 +81,106 @@ export class SpotifyProvider implements MediaProvider {
   private async accessToken(signal?: AbortSignal): Promise<string> {
     if (this.token && Date.now() < this.token.expiresAt)
       return this.token.value;
-    const raw = await boundedJson(
-      this.options.fetcher ?? fetch,
-      'https://accounts.spotify.com/api/token',
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Basic ${Buffer.from(`${this.options.clientId}:${this.options.clientSecret}`).toString('base64')}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
+    let raw: unknown;
+    try {
+      raw = await boundedJson(
+        this.options.fetcher ?? fetch,
+        'https://accounts.spotify.com/api/token',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Basic ${Buffer.from(`${this.options.clientId}:${this.options.clientSecret}`).toString('base64')}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: this.refreshToken
+            ? new URLSearchParams({
+                grant_type: 'refresh_token',
+                refresh_token: this.refreshToken,
+              }).toString()
+            : 'grant_type=client_credentials',
         },
-        body: 'grant_type=client_credentials',
-      },
-      this.options.timeoutMs ?? 8000,
-      signal,
-    );
+        this.options.timeoutMs ?? 8000,
+        signal,
+      );
+    } catch (error) {
+      if (error instanceof MusicError) {
+        const unauthorized =
+          error.code === 'PROVIDER_AUTH_REQUIRED' ||
+          (Boolean(this.refreshToken) && error.diagnostics?.httpStatus === 400);
+        throw new MusicError(
+          unauthorized ? 'PROVIDER_AUTH_REQUIRED' : error.code,
+          unauthorized
+            ? 'Spotify account authorization must be renewed.'
+            : error.message,
+          error.retryable,
+          error.correlationId,
+          { ...error.diagnostics, provider: this.id, operation: 'token' },
+        );
+      }
+      throw error;
+    }
     const parsed = tokenSchema.safeParse(raw);
     if (!parsed.success)
       throw new MusicError(
         'PROVIDER_PARSE_ERROR',
         'The music source returned invalid metadata.',
       );
+    if (
+      parsed.data.refresh_token &&
+      parsed.data.refresh_token !== this.refreshToken
+    ) {
+      this.refreshToken = parsed.data.refresh_token;
+      await this.options.onRefreshToken?.(this.refreshToken);
+    }
     this.token = {
       value: parsed.data.access_token,
       expiresAt: Date.now() + Math.max(1, parsed.data.expires_in - 60) * 1000,
     };
     return this.token.value;
   }
-  private async request(path: string, signal?: AbortSignal): Promise<unknown> {
-    const token = await this.accessToken(signal);
-    return boundedJson(
-      this.options.fetcher ?? fetch,
-      `https://api.spotify.com/v1/${path}`,
-      { headers: { Authorization: `Bearer ${token}` } },
-      this.options.timeoutMs ?? 8000,
-      signal,
-    );
+  private async request(
+    path: string,
+    signal?: AbortSignal,
+    operation = 'metadata',
+  ): Promise<unknown> {
+    try {
+      const token = await this.accessToken(signal);
+      const load = (access: string) =>
+        boundedJson(
+          this.options.fetcher ?? fetch,
+          `https://api.spotify.com/v1/${path}`,
+          { headers: { Authorization: `Bearer ${access}` } },
+          this.options.timeoutMs ?? 8000,
+          signal,
+        );
+      try {
+        return await load(token);
+      } catch (error) {
+        if (
+          !(error instanceof MusicError) ||
+          error.code !== 'PROVIDER_AUTH_REQUIRED' ||
+          !this.refreshToken
+        )
+          throw error;
+        // Retry one expired/revoked access token using the configured user grant.
+        this.token = undefined;
+        return await load(await this.accessToken(signal));
+      }
+    } catch (error) {
+      if (error instanceof MusicError)
+        throw new MusicError(
+          error.code,
+          error.message,
+          error.retryable,
+          error.correlationId,
+          {
+            ...error.diagnostics,
+            provider: this.id,
+            operation: error.diagnostics?.operation ?? operation,
+          },
+        );
+      throw error;
+    }
   }
   async parse(
     input: ClassifiedInput,
@@ -165,7 +233,13 @@ export class SpotifyProvider implements MediaProvider {
     const base = `${input.resourceType === 'album' ? 'albums' : 'playlists'}/${input.sourceId}`;
     const metadata = z
       .object({ name: z.string().min(1) })
-      .safeParse(await this.request(base, signal));
+      .safeParse(
+        await this.request(
+          `${base}?fields=name`,
+          signal,
+          `${input.resourceType}-metadata`,
+        ),
+      );
     if (!metadata.success)
       throw new MusicError(
         'COLLECTION_IMPORT_FAILED',
@@ -194,18 +268,33 @@ export class SpotifyProvider implements MediaProvider {
           await this.request(
             `${base}/${input.resourceType === 'album' ? 'tracks' : 'items'}?${new URLSearchParams({ limit: String(Math.min(50, limit - offset)), offset: String(offset) })}`,
             signal,
+            input.resourceType === 'album' ? 'album-tracks' : 'playlist-items',
           ),
         );
       } catch (error) {
         if (
           signal?.aborted ||
-          (error instanceof MusicError && error.code === 'PARSER_CANCELLED')
+          (error instanceof MusicError &&
+            [
+              'PARSER_CANCELLED',
+              'PROVIDER_AUTH_REQUIRED',
+              'PROVIDER_ACCESS_DENIED',
+            ].includes(error.code))
         )
           throw error;
         if (!offset)
           throw new MusicError(
             'COLLECTION_IMPORT_FAILED',
             'The collection could not be imported.',
+            error instanceof MusicError && error.retryable,
+            undefined,
+            error instanceof MusicError
+              ? error.diagnostics
+              : {
+                  provider: this.id,
+                  operation: `${input.resourceType}-items`,
+                  reason: 'invalid-response',
+                },
           );
         failed += Math.max(0, Math.min(total, limit) - offset);
         partial = true;

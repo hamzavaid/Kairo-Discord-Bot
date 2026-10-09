@@ -38,12 +38,32 @@ export async function boundedJson(
       signal,
     );
     if (response.status === 404)
-      throw new MusicError('NO_SEARCH_RESULTS', 'No matching song was found.');
+      throw new MusicError(
+        'NO_SEARCH_RESULTS',
+        'No matching song was found.',
+        false,
+        undefined,
+        { httpStatus: response.status, reason: 'http-error' },
+      );
+    if (response.status === 401 || response.status === 403)
+      throw new MusicError(
+        response.status === 401
+          ? 'PROVIDER_AUTH_REQUIRED'
+          : 'PROVIDER_ACCESS_DENIED',
+        response.status === 401
+          ? 'The music source requires authorization.'
+          : 'The music source denied access.',
+        false,
+        undefined,
+        { httpStatus: response.status, reason: 'http-error' },
+      );
     if (!response.ok)
       throw new MusicError(
         'PROVIDER_UNAVAILABLE',
         'The music source is temporarily unavailable.',
         response.status === 429 || response.status >= 500,
+        undefined,
+        { httpStatus: response.status, reason: 'http-error' },
       );
     if (!response.headers.get('content-type')?.includes('application/json'))
       throw new MusicError(

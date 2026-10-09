@@ -72,6 +72,10 @@ function safeFailure(error: unknown): { code: string; message: string } {
       STREAM_UNAVAILABLE: 'This song has no playable audio source.',
       VOICE_JOIN_ERROR: 'Could not join the voice channel.',
       INVALID_PLAYBACK_TRANSITION: 'Playback is not in the required state.',
+      PROVIDER_AUTH_REQUIRED:
+        'This source requires account authorization. Ask the bot owner to authorize the music provider.',
+      PROVIDER_ACCESS_DENIED:
+        'The music provider denied access to this resource. Check the account permissions and playlist availability.',
       PROVIDER_TIMEOUT: 'The metadata provider timed out.',
       PROVIDER_UNAVAILABLE: 'The metadata provider is unavailable.',
       PROVIDER_PARSE_ERROR: 'The metadata provider returned invalid data.',
