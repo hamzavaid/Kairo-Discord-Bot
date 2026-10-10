@@ -17,9 +17,9 @@ const json = (value: unknown) =>
     headers: { 'Content-Type': 'application/json' },
   });
 const song = (index: number) => ({
-  id: (index ? 'b' : 'a').repeat(22),
-  name: titles[index],
-  duration_ms: 180000,
+  id: String.fromCharCode(97 + index).repeat(22),
+  name: titles[index] ?? `Song ${index + 1}`,
+  duration_ms: index < 2 ? 180000 : 61000 + index,
   artists: [{ name: 'Artist' }],
 });
 const video = (index: number) => ({
@@ -52,6 +52,21 @@ it.each([
   ],
   ['Spotify playlist with share parameters', sharedPlaylist, true, true],
   [
+    '12-track Spotify playlist including short songs',
+    sharedPlaylist,
+    true,
+    true,
+    12,
+  ],
+  [
+    '12-track Spotify playlist with three unmatched songs',
+    sharedPlaylist,
+    true,
+    true,
+    12,
+    3,
+  ],
+  [
     'YouTube video',
     `https://www.youtube.com/watch?v=${videoIds[0]}&si=share`,
     false,
@@ -71,7 +86,14 @@ it.each([
   ],
 ] as const)(
   '/play handles %s through metadata, queue, matching and mocked audio playback',
-  async (_name, input, collection, spotify) => {
+  async (
+    _name,
+    input,
+    collection,
+    spotify,
+    playlistSize: number = 2,
+    failedTracks: number = 0,
+  ) => {
     const fetcher = vi.fn(async (request: string | URL | Request) => {
       const url = new URL(String(request));
       if (url.pathname.endsWith('/token'))
@@ -80,16 +102,29 @@ it.each([
         return json({ name: 'Mix' });
       if (url.pathname === `/v1/playlists/${spotifyId}/items`)
         return json({
-          items: [{ item: song(0) }, { item: song(1) }],
-          total: 2,
+          items: Array.from({ length: playlistSize }, (_, index) => ({
+            item: song(index),
+          })),
+          total: playlistSize,
           next: null,
         });
       if (url.pathname === `/v1/tracks/${'a'.repeat(22)}`) return json(song(0));
       throw new Error(`Unexpected mocked API path: ${url.pathname}`);
     });
-    const search = vi.fn(async (query: string) => [
-      video(query.includes('Second') ? 1 : 0),
-    ]);
+    const search = vi.fn(async (query: string) => {
+      const index =
+        Array.from({ length: playlistSize }, (_, i) => i).find((i) =>
+          query.endsWith(song(i).name!),
+        ) ?? 0;
+      if (index < failedTracks) return [];
+      return [
+        {
+          ...video(index < 2 ? index : 0),
+          title: song(index).name,
+          duration: song(index).duration_ms,
+        },
+      ];
+    });
     const getVideo = vi.fn(async () => video(0));
     const getPlaylist = vi.fn(async () => ({
       title: 'Mix',
@@ -181,14 +216,28 @@ it.each([
       await vi.waitFor(() =>
         expect(engine.getPlayback('guild').state).toBe('PLAYING'),
       );
-      expect(engine.getPlayback('guild').current?.track.title).toBe('First');
+      expect(engine.getPlayback('guild').current?.track.title).toBe(
+        song(failedTracks).name,
+      );
       expect(
         engine.getQueue('guild').upcoming.map((e) => e.track.title),
-      ).toEqual(collection ? ['Second'] : []);
-      expect(search).toHaveBeenCalledTimes(spotify ? 1 : 0);
+      ).toEqual(
+        collection
+          ? Array.from(
+              { length: playlistSize - failedTracks - 1 },
+              (_, i) => song(i + failedTracks + 1).name,
+            )
+          : [],
+      );
+      expect(search).toHaveBeenCalledTimes(spotify ? failedTracks + 1 : 0);
+      expect(
+        engine.getQueue('guild').history.map((entry) => entry.track.title),
+      ).toEqual(Array.from({ length: failedTracks }, (_, i) => song(i).name));
       if (!spotify) expect(fetcher).not.toHaveBeenCalled();
       if (collection) {
-        expect(JSON.stringify(editReply.mock.calls)).toContain('2 songs');
+        expect(JSON.stringify(editReply.mock.calls)).toContain(
+          `${spotify ? playlistSize : 2} songs`,
+        );
         if (spotify)
           expect(
             engine.getQueue('guild').upcoming[0]?.track.sourceProvider,
@@ -197,10 +246,10 @@ it.each([
         await vi.waitFor(() => {
           expect(engine.getPlayback('guild').state).toBe('PLAYING');
           expect(engine.getPlayback('guild').current?.track.title).toBe(
-            'Second',
+            song(failedTracks + 1).name,
           );
         });
-        expect(search).toHaveBeenCalledTimes(spotify ? 2 : 0);
+        expect(search).toHaveBeenCalledTimes(spotify ? failedTracks + 2 : 0);
       } else if (!spotify) expect(getVideo).toHaveBeenCalledOnce();
       await engine.disconnectVoice('guild');
       expect(voice.destroy).toHaveBeenCalledOnce();
