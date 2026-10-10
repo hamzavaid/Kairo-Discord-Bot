@@ -58,7 +58,6 @@ const icons: Record<string, string> = {
   like: '\u2665\ufe0f',
   add: '\u2795',
   refresh: '\ud83d\udd04',
-  stop: '\u23f9\ufe0f',
   close: '\u2716\ufe0f',
   'queue-prev': '\u2b05\ufe0f',
   'queue-next': '\u27a1\ufe0f',
@@ -170,7 +169,7 @@ export function playerView(
   );
   const lines = queue.upcoming.slice((page - 1) * 10, page * 10).map(
     (entry, offset) =>
-      `**${String((page - 1) * 10 + offset + 1).padStart(2, '0')}** ${heading(entry.track, 40)}  \`${entry.track.isLive ? 'Live' : duration(entry.track.durationMs)}\`\n-# ${entry.track.artists
+      `**${String((page - 1) * 10 + offset + 1).padStart(2, '0')}** ${heading(entry.track, 40)}  \`${entry.track.isLive ? 'Live' : duration(entry.track.durationMs)}\` \u00b7 ${entry.track.artists
         .slice(0, 1)
         .map((a) => uiText(a.name, 25))
         .join(', ')}`,
@@ -185,7 +184,18 @@ export function playerView(
     .addSeparatorComponents(new SeparatorBuilder())
     .addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
-        `### Up next\n-# ${queue.upcoming.length} ${queue.upcoming.length === 1 ? 'song' : 'songs'} \u00b7 ${repeat}\n\n${lines.join('\n\n') || 'Your queue is clear. Add something you love.'}\n\n-# Page ${page}/${pages}`,
+        `### Up next\n-# ${queue.upcoming.length + (current ? 1 : 0)} songs remaining \u00b7 ${current ? 1 : 0} current \u00b7 ${queue.upcoming.length} queued \u00b7 ${queue.history.length} played/skipped\n-# ${repeat}\n${lines.join('\n') || 'Your queue is clear. Add something you love.'}\n-# Page ${page}/${pages}`,
+      ),
+    );
+  if (queue.history.length)
+    card.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        `-# Previously played / skipped: ${queue.history
+          .slice(-3)
+          .map((entry) => uiText(entry.track.title, 35))
+          .join(
+            ' \u00b7 ',
+          )}${queue.history.length > 3 ? ` (+${queue.history.length - 3} earlier)` : ''}`,
       ),
     );
   if (pages > 1)

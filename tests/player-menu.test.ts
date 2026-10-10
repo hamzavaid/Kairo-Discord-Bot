@@ -503,3 +503,50 @@ it('renders a compact artwork section and separates transport, queue actions and
     playingColor,
   );
 });
+
+it('renders ten compact single-line queue entries, explicit totals and a plain Stop button', async () => {
+  const s = await setup(11);
+  const card = JSON.parse(s.text()).components[0];
+  const queueText = card.components.find((c: { content?: string }) =>
+    c.content?.startsWith('### Up next'),
+  ).content as string;
+  expect(queueText).toContain('12 songs remaining');
+  expect(queueText).toContain('1 current');
+  expect(queueText).toContain('11 queued');
+  const entries = queueText
+    .split('\n')
+    .filter((line) => /^\*\*\d{2}\*\*/u.test(line));
+  expect(entries).toHaveLength(10);
+  expect(
+    entries.every((line) => line.includes('Artist') && line.includes('3:00')),
+  ).toBe(true);
+  expect(queueText).not.toContain('\n\n');
+  const stop = card.components
+    .flatMap(
+      (c: { components?: { label: string; emoji?: unknown }[] }) =>
+        c.components ?? [],
+    )
+    .find((c: { label: string }) => c.label === 'Stop');
+  expect(stop).toBeDefined();
+  expect(stop.emoji).toBeUndefined();
+  await s.click('Next page');
+  expect(s.text()).toContain('Song 12');
+  expect(s.text()).toContain('Page 2/2');
+});
+
+it('shows previously played or skipped tracks when playback has advanced to playlist track four', async () => {
+  const s = await setup(11);
+  s.queue.history = [];
+  for (let i = 0; i < 3; i++) {
+    s.queue.history.push(s.queue.current!);
+    s.queue.current = s.queue.upcoming.shift();
+  }
+  s.queue.generation++;
+  await s.click('Refresh');
+  expect(s.text()).toContain('Song 4');
+  expect(s.text()).toContain('8 queued');
+  expect(s.text()).toContain('3 played/skipped');
+  expect(s.text()).toContain('Previously played / skipped');
+  for (const title of ['Song 1', 'Song 2', 'Song 3'])
+    expect(s.text()).toContain(title);
+});
