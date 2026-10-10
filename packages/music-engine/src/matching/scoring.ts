@@ -1,9 +1,12 @@
 import type { Track } from '../domain/Track.js';
 import {
+  artistTitleCredit,
+  phoneticKey,
   featuredArtists,
   normalizeArtist,
   normalizeTitle,
   tokenize,
+  titleVariants,
 } from './normalization.js';
 import type { MatchSignals, MatchWeights } from './types.js';
 import { compareVersions, detectVersions } from './versionDetection.js';
@@ -48,12 +51,56 @@ function tokenSimilarity(
 }
 
 export function titleSimilarity(source: Track, candidate: Track): number {
-  const left = normalizeTitle(source.title, detectVersions(source));
-  const right = normalizeTitle(candidate.title, detectVersions(candidate));
-  if (!left.length || !right.length) return 0;
-  return (
-    0.7 * tokenSimilarity(left, right) +
-    0.3 * editSimilarity(left.join(' '), right.join(' '))
+  const bilingual =
+    /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(
+      source.title + candidate.title,
+    );
+  const left = titleVariants(
+    artistTitleCredit(source.title, source.artists).title,
+    detectVersions(source),
+    bilingual,
+  );
+  const right = titleVariants(
+    artistTitleCredit(candidate.title, source.artists).title,
+    detectVersions(candidate),
+    bilingual,
+  );
+  const softTokens = (a: readonly string[], b: readonly string[]) => {
+    const remaining = [...b];
+    let common = 0;
+    for (const word of a) {
+      let best = -1;
+      let score = 0;
+      remaining.forEach((other, index) => {
+        const value =
+          word === other
+            ? 1
+            : Math.min(word.length, other.length) >= 5 &&
+                word[0] === other[0] &&
+                editSimilarity(word, other) >= 0.85
+              ? 0.9
+              : 0;
+        if (value > score) {
+          best = index;
+          score = value;
+        }
+      });
+      if (best >= 0) {
+        common += score;
+        remaining.splice(best, 1);
+      }
+    }
+    return a.length && b.length ? (2 * common) / (a.length + b.length) : 0;
+  };
+  return Math.max(
+    0,
+    ...left.flatMap((a) =>
+      right.map(
+        (b) =>
+          0.7 * softTokens(a, b) +
+          0.3 * editSimilarity(a.join(' '), b.join(' ')),
+      ),
+    ),
   );
 }
 
@@ -70,7 +117,10 @@ export function artistSimilarity(
       .map((name) => normalizeArtist(name, aliases))
       .filter(Boolean);
   const left = [...new Set(names(source))];
-  const right = [...new Set(names(candidate))];
+  const credit = artistTitleCredit(candidate.title, source.artists).artists;
+  const right = credit
+    ? credit.map((name) => normalizeArtist(name, aliases))
+    : [...new Set(names(candidate))];
   if (!left.length || !right.length) return 0;
   const compare = (a: string, b: string) =>
     a === b
@@ -119,6 +169,8 @@ export function scoreCandidate(
   weights: MatchWeights,
   quality: number,
   aliases: Readonly<Record<string, string>>,
+  readings?: Readonly<Record<string, string>>,
+  artistReadings?: Readonly<Record<string, readonly string[]>>,
 ): { score: number; signals: MatchSignals; rejectionReason?: string } {
   const version = compareVersions(
     detectVersions(source),
@@ -135,6 +187,78 @@ export function scoreCandidate(
     providerQuality: quality,
     versionCompatibility: version.similarity,
   };
+  if (
+    signals.titleSimilarity >= 0.9 &&
+    signals.durationSimilarity === 1 &&
+    artistReadings
+  ) {
+    const left = artistReadings[source.id] ?? [];
+    const right = artistReadings[candidate.id] ?? [];
+    const japanese = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u;
+    const compare = (a: string, b: string, i: number, j: number) => {
+      if (
+        japanese.test(source.artists[i]?.name ?? '') ===
+        japanese.test(candidate.artists[j]?.name ?? '')
+      )
+        return 0;
+      const key = phoneticKey(a);
+      return key.length >= 4 && key === phoneticKey(b) ? 0.95 : 0;
+    };
+    if (left.length && right.length) {
+      const recall =
+        left.reduce(
+          (sum, a, i) =>
+            sum + Math.max(...right.map((b, j) => compare(a, b, i, j))),
+          0,
+        ) / left.length;
+      const precision =
+        right.reduce(
+          (sum, b, j) =>
+            sum + Math.max(...left.map((a, i) => compare(a, b, i, j))),
+          0,
+        ) / right.length;
+      signals.artistSimilarity = Math.max(
+        signals.artistSimilarity,
+        0.65 * recall + 0.35 * precision,
+      );
+    }
+  }
+  // Cross-script readings supplement title evidence only with near-exact artist and duration.
+  const sourceReading = readings?.[source.id];
+  const candidateReading = readings?.[candidate.id];
+  if (
+    Boolean(sourceReading) !== Boolean(candidateReading) &&
+    signals.artistSimilarity >= 0.95 &&
+    signals.durationSimilarity === 1
+  ) {
+    const left = normalizeTitle(
+      artistTitleCredit(sourceReading ?? source.title, source.artists).title,
+      detectVersions(source),
+    );
+    const right = normalizeTitle(
+      artistTitleCredit(candidateReading ?? candidate.title, source.artists)
+        .title,
+      detectVersions(candidate),
+    );
+    const equivalent = (a: string, b: string) =>
+      a === b ||
+      (Math.min(a.length, b.length) >= 5 &&
+        phoneticKey(a).length >= 4 &&
+        phoneticKey(a) === phoneticKey(b));
+    // Require a one-to-one token correspondence; short or unrelated titles do not qualify.
+    const unmatched = [...right];
+    const aligned =
+      left.length > 0 &&
+      left.length === right.length &&
+      left.every((word) => {
+        const index = unmatched.findIndex((other) => equivalent(word, other));
+        if (index < 0) return false;
+        unmatched.splice(index, 1);
+        return true;
+      });
+    if (aligned)
+      signals.titleSimilarity = Math.max(signals.titleSimilarity, 0.9);
+  }
   const score = (Object.keys(weights) as (keyof MatchWeights)[]).reduce(
     (sum, key) => sum + weights[key] * signals[key],
     0,

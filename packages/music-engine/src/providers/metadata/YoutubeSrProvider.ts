@@ -127,7 +127,15 @@ export class YoutubeSrProvider implements MediaProvider {
     );
     const tracks = raw
       .slice(0, Math.max(MUSIC_SEARCH_POOL_SIZE, maxResults))
-      .map((item) => this.normalize(item));
+      .flatMap((item) => {
+        if (!videoSchema.safeParse(item).success) return [];
+        return [this.normalize(item)];
+      });
+    if (raw.length && !tracks.length)
+      throw new MusicError(
+        'PROVIDER_PARSE_ERROR',
+        'The music source returned invalid metadata.',
+      );
     return rankMusicSearchResults(query, tracks).slice(0, maxResults);
   }
 

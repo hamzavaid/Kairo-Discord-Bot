@@ -20,7 +20,7 @@ const patterns: readonly [VersionMarker, RegExp][] = [
     'live',
     /(?:[([]\s*live\b|[-–—:]\s*live\b|\blive\b\s*$|\blive\s+(?:at|in|from)\b)/iu,
   ],
-  ['remix', /\bremix\b/iu],
+  ['remix', /\b(?:remix|another\s+mix|alternate\s+mix)\b/iu],
   ['remaster', /\bremaster(?:ed)?\b/iu],
   ['acoustic', /\bacoustic\b/iu],
   ['instrumental', /\binstrumental\b/iu],

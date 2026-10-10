@@ -15,6 +15,9 @@ export interface MatchRequest {
   source: Track;
   candidates: readonly Track[];
   requestId?: string;
+  /** Offline Japanese readings keyed by canonical track ID; never provider payloads. */
+  titleReadings?: Readonly<Record<string, string>>;
+  artistReadings?: Readonly<Record<string, readonly string[]>>;
 }
 
 export interface MatchResult {

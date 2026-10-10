@@ -229,7 +229,7 @@ it.each([
             )
           : [],
       );
-      expect(search).toHaveBeenCalledTimes(spotify ? failedTracks + 1 : 0);
+      expect(search).toHaveBeenCalledTimes(spotify ? failedTracks * 2 + 1 : 0);
       expect(
         engine.getQueue('guild').history.map((entry) => entry.track.title),
       ).toEqual(Array.from({ length: failedTracks }, (_, i) => song(i).name));
@@ -249,7 +249,9 @@ it.each([
             song(failedTracks + 1).name,
           );
         });
-        expect(search).toHaveBeenCalledTimes(spotify ? failedTracks + 2 : 0);
+        expect(search).toHaveBeenCalledTimes(
+          spotify ? failedTracks * 2 + 2 : 0,
+        );
       } else if (!spotify) expect(getVideo).toHaveBeenCalledOnce();
       await engine.disconnectVoice('guild');
       expect(voice.destroy).toHaveBeenCalledOnce();

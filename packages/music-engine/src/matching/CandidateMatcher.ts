@@ -63,6 +63,8 @@ export class CandidateMatcher {
         this.weights,
         quality,
         this.aliases,
+        request.titleReadings,
+        request.artistReadings,
       );
       return {
         result: { candidate, score: scored.score, signals: scored.signals },

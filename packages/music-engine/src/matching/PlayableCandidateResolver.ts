@@ -1,3 +1,5 @@
+import { setTimeout as delay } from 'node:timers/promises';
+import { titleReadings, artistReadings } from './titleReadings.js';
 import { MusicError } from '../api/errors.js';
 import type { MetadataProviderId } from '../api/MetadataOptions.js';
 import type { Track } from '../domain/Track.js';
@@ -54,32 +56,104 @@ export class PlayableCandidateResolver {
         'STREAM_UNAVAILABLE',
         'No playable source is available.',
       );
-    const query =
-      `${track.artists.map((artist) => artist.name).join(' ')} ${track.title}`.trim();
-    const { provider, value } = await this.metadata.searchOn(
-      this.searchProvider,
-      query,
-      10,
-      signal,
-    );
-    const candidates = value.map((payload) =>
-      normalizeProviderTrack(payload, {
-        providerId: provider.id,
-        input: track.provenance.input,
-        requestedBy: track.requestedBy,
-        parsedBy: provider.id,
-      }),
-    );
-    const matched = this.matcher.match({ source: track, candidates });
-    return {
-      ...matched.candidate,
-      provenance: {
-        ...matched.candidate.provenance,
-        input: track.provenance.input,
-        candidateSearchProvider: provider.id,
-        selectedCandidateId: matched.candidate.sourceId!,
-        streamProvider: 'yt-dlp',
-      },
-    };
+    const artists = track.artists.map((artist) => artist.name).join(' ');
+    const queries = [
+      `${artists} ${track.title}`.trim(),
+      `"${track.title.replace(/"/gu, '')}" ${artists} official audio`.trim(),
+    ];
+    const timeout = new AbortController();
+    const timer = setTimeout(() => timeout.abort(), 20000);
+    const active = signal
+      ? AbortSignal.any([signal, timeout.signal])
+      : timeout.signal;
+    const pool = new Map<string, Track>();
+    try {
+      for (let index = 0; index < queries.length; index++) {
+        let response;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            response = await this.metadata.searchOn(
+              this.searchProvider,
+              queries[index]!,
+              25,
+              active,
+            );
+            break;
+          } catch (error) {
+            if (active.aborted) throw error;
+            if (
+              attempt ||
+              !(error instanceof MusicError) ||
+              !error.retryable ||
+              !['PROVIDER_UNAVAILABLE', 'PROVIDER_TIMEOUT'].includes(error.code)
+            )
+              throw error;
+            await delay(250, undefined, { signal: active });
+          }
+        }
+        if (!response)
+          throw new MusicError(
+            'PROVIDER_UNAVAILABLE',
+            'The music source is temporarily unavailable.',
+            true,
+          );
+        for (const payload of response.value) {
+          const candidate = normalizeProviderTrack(payload, {
+            providerId: response.provider.id,
+            input: track.provenance.input,
+            requestedBy: track.requestedBy,
+            parsedBy: response.provider.id,
+          });
+          pool.set(candidate.id, candidate);
+        }
+        const candidates = [...pool.values()];
+        const readings = await titleReadings([track, ...candidates], active);
+        const artists = await artistReadings([track, ...candidates], active);
+        try {
+          const matched = this.matcher.match({
+            source: track,
+            candidates,
+            titleReadings: readings,
+            artistReadings: artists,
+          });
+          return {
+            ...matched.candidate,
+            provenance: {
+              ...matched.candidate.provenance,
+              input: track.provenance.input,
+              candidateSearchProvider: response.provider.id,
+              selectedCandidateId: matched.candidate.sourceId!,
+              streamProvider: 'yt-dlp',
+            },
+          };
+        } catch (error) {
+          if (
+            !(error instanceof MusicError) ||
+            error.code !== 'NO_RELIABLE_MATCH' ||
+            index === queries.length - 1
+          )
+            throw error;
+        }
+      }
+      throw new MusicError(
+        'NO_RELIABLE_MATCH',
+        'No reliable match was found for this song.',
+      );
+    } catch (error) {
+      if (signal?.aborted)
+        throw new MusicError(
+          'PARSER_CANCELLED',
+          'The music request was cancelled.',
+        );
+      if (timeout.signal.aborted)
+        throw new MusicError(
+          'PROVIDER_TIMEOUT',
+          'Playable candidate discovery timed out.',
+          true,
+        );
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }
