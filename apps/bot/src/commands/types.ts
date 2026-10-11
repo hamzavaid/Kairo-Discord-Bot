@@ -1,3 +1,4 @@
+import type { DiscoveryService } from '../services/DiscoveryService.js';
 import type { QueueControlService } from '../services/QueueControlService.js';
 import type { PlaybackControlService } from '../services/PlaybackControlService.js';
 import type { LyricsService } from '../services/LyricsService.js';
@@ -26,6 +27,7 @@ export interface CommandServices {
   queueControls?: QueueControlService;
   history?: HistoryService;
   recommendations?: RecommendationService;
+  discovery?: DiscoveryService;
   lyrics?: LyricsService;
   statistics?: StatisticsService;
   onSettingsChanged?: (guildId: string) => Promise<void>;

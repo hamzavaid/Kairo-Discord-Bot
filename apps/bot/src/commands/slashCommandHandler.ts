@@ -1,3 +1,4 @@
+import discoverCommand from './utility/discover.js';
 import PlaySongCommand from './context/PlaySong.js';
 import SearchMusicCommand from './context/SearchMusic.js';
 import AddQueueCommand from './context/AddQueue.js';
@@ -182,6 +183,7 @@ const builtInCommands: readonly SlashCommand[] = [
   recommendCommand,
   lyricsCommand,
   voteCommand,
+  discoverCommand,
 ];
 
 const builtInMessageCommands: readonly MessageCommand[] = [
@@ -377,6 +379,9 @@ export class SlashCommandHandler {
       }
       const context: CommandExecutionContext = {
         music: this.options.music,
+        ...(this.options.discovery
+          ? { discovery: this.options.discovery }
+          : {}),
         ...(this.options.queueControls
           ? { queueControls: this.options.queueControls }
           : {}),

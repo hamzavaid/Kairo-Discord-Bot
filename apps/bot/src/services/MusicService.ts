@@ -217,6 +217,7 @@ export class MusicService {
       input.guildId,
       input.tracks.map((track) => ({ ...track, requestedBy: input.userId })),
       input.userId,
+      ...(input.position ? [input.position] : []),
     );
     return { queued: input.tracks.length };
   }

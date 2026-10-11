@@ -18,7 +18,8 @@ export class CommandError extends Error {
       | 'LYRICS_NOT_FOUND'
       | 'VOTE_ALREADY_CAST'
       | 'VOTE_NOT_REQUIRED'
-      | 'QUEUE_ENTRY_NOT_FOUND',
+      | 'QUEUE_ENTRY_NOT_FOUND'
+      | 'DISCOVERY_UNAVAILABLE',
     message: string,
     options?: ErrorOptions,
   ) {

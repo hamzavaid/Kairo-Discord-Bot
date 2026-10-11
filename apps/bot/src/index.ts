@@ -1,3 +1,4 @@
+import { DiscoveryService } from './services/DiscoveryService.js';
 import { QueueControlService } from './services/QueueControlService.js';
 import { PlaybackControlService } from './services/PlaybackControlService.js';
 import { LyricsService } from './services/LyricsService.js';
@@ -128,6 +129,7 @@ const commandHandler = createSlashCommandHandler({
   queueControls: new QueueControlService(music, database.repository, policy),
   library,
   recommendations,
+  discovery: new DiscoveryService(music, recommendations, library, history),
   lyrics: new LyricsService(),
   audit,
   settings: database.repository,

@@ -230,13 +230,14 @@ describe('slash command handler and audits', () => {
       'recommend',
       'lyrics',
       'vote',
+      'discover',
       'Play Song',
       'Search Music',
       'Add to Queue',
       'Play Next',
       'Song Info',
     ]);
-    expect(handler.registrationData()).toHaveLength(42);
+    expect(handler.registrationData()).toHaveLength(43);
 
     const result = await run('help');
     const payload = lastPayload(result.reply) as {

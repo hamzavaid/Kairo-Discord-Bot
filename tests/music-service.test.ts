@@ -397,3 +397,25 @@ it('rejects empty or failed collections before connecting or modifying the queue
   expect(engine.connectVoice).not.toHaveBeenCalled();
   expect(engine.enqueue).not.toHaveBeenCalled();
 });
+
+it('preserves play-next placement for already resolved result cards', async () => {
+  const { engine, service } = setup();
+  const enqueueMany = vi.fn(async () => ({ current: undefined, upcoming: [] }));
+  Object.assign(engine, { enqueueMany });
+  engine.getPlayback.mockReturnValue({ state: 'PLAYING' });
+  await service.playTracks({
+    guildId: 'guild',
+    userId: 'user',
+    voiceTarget: target,
+    tracks: [track('card')],
+    position: 'next',
+  });
+  expect(enqueueMany).toHaveBeenCalledWith({
+    guildId: 'guild',
+    enqueuedBy: 'user',
+    tracks: [track('card')],
+    position: 'next',
+  });
+  expect(engine.parse).not.toHaveBeenCalled();
+  expect(engine.connectVoice).not.toHaveBeenCalled();
+});
