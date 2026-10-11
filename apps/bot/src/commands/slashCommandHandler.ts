@@ -78,6 +78,8 @@ function safeFailure(error: unknown): { code: string; message: string } {
   if (error instanceof MusicError) {
     const messages: Partial<Record<MusicError['code'], string>> = {
       QUEUE_EMPTY: 'The queue is empty.',
+      QUEUE_ENTRY_NOT_FOUND:
+        'That queue entry is no longer upcoming. Refresh the queue.',
       NO_SEARCH_RESULTS: 'No matching song was found.',
       NO_RELIABLE_MATCH: 'No reliable match was found.',
       STREAM_UNAVAILABLE: 'This song has no playable audio source.',
@@ -317,6 +319,9 @@ export class SlashCommandHandler {
       }
       const context: CommandExecutionContext = {
         music: this.options.music,
+        ...(this.options.queueControls
+          ? { queueControls: this.options.queueControls }
+          : {}),
         ...(this.options.controls ? { controls: this.options.controls } : {}),
         ...(this.options.lyrics ? { lyrics: this.options.lyrics } : {}),
         ...(this.options.recommendations

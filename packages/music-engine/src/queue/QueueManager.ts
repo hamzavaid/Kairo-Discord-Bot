@@ -116,9 +116,22 @@ export class QueueManager {
   async remove(request: RemoveRequest): Promise<QueueSnapshot> {
     const queue = this.queue(request.guildId);
     return queue.mutex.runExclusive(() => {
-      const position =
-        request.position ??
-        queue.upcoming.findIndex((entry) => entry.id === request.entryId) + 1;
+      if (
+        request.expectedGeneration !== undefined &&
+        queue.generation !== request.expectedGeneration
+      )
+        throw new MusicError(
+          'STALE_PLAYBACK',
+          'The song changed. Refresh the queue.',
+        );
+      const position = request.entryId
+        ? queue.upcoming.findIndex((entry) => entry.id === request.entryId) + 1
+        : (request.position ?? 0);
+      if (request.entryId && position === 0)
+        throw new MusicError(
+          'QUEUE_ENTRY_NOT_FOUND',
+          'That queue entry is no longer upcoming.',
+        );
       queue.remove(position);
       return queue.snapshot();
     });
@@ -127,7 +140,27 @@ export class QueueManager {
   async move(request: MoveRequest): Promise<QueueSnapshot> {
     const queue = this.queue(request.guildId);
     return queue.mutex.runExclusive(() => {
-      queue.move(request.from, request.to);
+      if (
+        request.expectedGeneration !== undefined &&
+        queue.generation !== request.expectedGeneration
+      )
+        throw new MusicError(
+          'STALE_PLAYBACK',
+          'The song changed. Refresh the queue.',
+        );
+      const from = request.entryId
+        ? queue.upcoming.findIndex((entry) => entry.id === request.entryId) + 1
+        : (request.from ?? 0);
+      const to = request.toEntryId
+        ? queue.upcoming.findIndex((entry) => entry.id === request.toEntryId) +
+          1
+        : request.to;
+      if ((request.entryId && !from) || (request.toEntryId && !to))
+        throw new MusicError(
+          'QUEUE_ENTRY_NOT_FOUND',
+          'That queue entry is no longer upcoming.',
+        );
+      queue.move(from, to);
       return queue.snapshot();
     });
   }

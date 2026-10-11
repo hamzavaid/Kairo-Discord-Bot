@@ -276,6 +276,28 @@ export class MusicService {
       ...(expectedGeneration === undefined ? [] : [expectedGeneration]),
     );
   }
+  searchQueue(guildId: string, query: string) {
+    return this.client.searchQueue(guildId, query);
+  }
+  removeEntry(guildId: string, entryId: string, expectedGeneration?: number) {
+    return this.client.removeEntry(guildId, entryId, expectedGeneration);
+  }
+  moveEntry(
+    guildId: string,
+    entryId: string,
+    toEntryId: string,
+    expectedGeneration?: number,
+  ) {
+    return this.client.moveEntry(
+      guildId,
+      entryId,
+      toEntryId,
+      expectedGeneration,
+    );
+  }
+  clearQueue(guildId: string, expectedGeneration?: number) {
+    return this.client.clearQueue(guildId, expectedGeneration);
+  }
   pause(guildId: string, expectedGeneration?: number) {
     return this.client.pause(
       guildId,

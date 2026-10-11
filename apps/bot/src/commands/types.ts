@@ -1,3 +1,4 @@
+import type { QueueControlService } from '../services/QueueControlService.js';
 import type { PlaybackControlService } from '../services/PlaybackControlService.js';
 import type { LyricsService } from '../services/LyricsService.js';
 import type { RecommendationService } from '../services/RecommendationService.js';
@@ -22,6 +23,7 @@ export interface CommandServices {
   library?: LibraryService;
   policy?: PlaybackPolicyService;
   controls?: PlaybackControlService;
+  queueControls?: QueueControlService;
   history?: HistoryService;
   recommendations?: RecommendationService;
   lyrics?: LyricsService;

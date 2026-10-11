@@ -103,9 +103,13 @@ export interface KairoMusicEngine {
     request: EnqueueRequest & { expectedGeneration: number },
   ): Promise<boolean>;
   getQueue(guildId: string): QueueSnapshot;
+  searchQueue(
+    guildId: string,
+    query: string,
+  ): import('./queue.js').QueueEntry[];
   skip(guildId: string, expectedGeneration?: number): Promise<QueueSnapshot>;
   stop(guildId: string, expectedGeneration?: number): Promise<QueueSnapshot>;
-  clear(guildId: string): Promise<QueueSnapshot>;
+  clear(guildId: string, expectedGeneration?: number): Promise<QueueSnapshot>;
   remove(request: RemoveRequest): Promise<QueueSnapshot>;
   move(request: MoveRequest): Promise<QueueSnapshot>;
   shuffle(guildId: string, expectedGeneration?: number): Promise<QueueSnapshot>;
@@ -450,6 +454,34 @@ export function createKairoMusicEngine(
         return true;
       });
     },
+    searchQueue(guildId, query) {
+      const normalize = (value: string) =>
+        value
+          .normalize('NFKC')
+          .toLowerCase()
+          .replace(/[^\p{L}\p{N}]+/gu, ' ')
+          .trim();
+      const tokens = normalize(query).split(/\s+/u).filter(Boolean);
+      if (!tokens.length || query.length > 500)
+        throw new MusicError(
+          'INVALID_QUERY',
+          'Enter a queue search of 1-500 characters.',
+        );
+      const snapshot = queues.snapshot(guildId);
+      return [
+        ...(snapshot.current ? [snapshot.current] : []),
+        ...snapshot.upcoming,
+      ].filter((entry) => {
+        const text = normalize(
+          [
+            entry.track.title,
+            ...entry.track.artists.map((a) => a.name),
+            entry.track.album?.title ?? '',
+          ].join(' '),
+        );
+        return tokens.every((token) => text.includes(token));
+      });
+    },
     getQueue(guildId) {
       return queues.snapshot(guildId);
     },
@@ -482,8 +514,11 @@ export function createKairoMusicEngine(
         return queues.stop(guildId);
       });
     },
-    clear(guildId) {
-      return queues.clear(guildId);
+    clear(guildId, expectedGeneration) {
+      return lock(guildId).runExclusive(() => {
+        assertGeneration(guildId, expectedGeneration);
+        return queues.clear(guildId);
+      });
     },
     remove(request) {
       return queues.remove(request);

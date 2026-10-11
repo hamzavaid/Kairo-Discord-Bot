@@ -40,10 +40,14 @@ export interface RemoveRequest {
   guildId: string;
   position?: number;
   entryId?: string;
+  expectedGeneration?: number;
 }
 
 export interface MoveRequest {
   guildId: string;
-  from: number;
+  from?: number;
   to: number;
+  entryId?: string;
+  toEntryId?: string;
+  expectedGeneration?: number;
 }

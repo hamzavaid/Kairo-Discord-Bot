@@ -72,6 +72,33 @@ export class KairoMusicClient {
     return this.engine.getPlayback(guildId);
   }
 
+  searchQueue(guildId: string, query: string) {
+    return this.engine.searchQueue(guildId, query);
+  }
+  removeEntry(guildId: string, entryId: string, expectedGeneration?: number) {
+    return this.engine.remove({
+      guildId,
+      entryId,
+      ...(expectedGeneration === undefined ? {} : { expectedGeneration }),
+    });
+  }
+  moveEntry(
+    guildId: string,
+    entryId: string,
+    toEntryId: string,
+    expectedGeneration?: number,
+  ) {
+    return this.engine.move({
+      guildId,
+      entryId,
+      toEntryId,
+      to: 1,
+      ...(expectedGeneration === undefined ? {} : { expectedGeneration }),
+    });
+  }
+  clearQueue(guildId: string, expectedGeneration?: number) {
+    return this.engine.clear(guildId, expectedGeneration);
+  }
   getQueue(guildId: string): QueueSnapshot {
     return this.engine.getQueue(guildId);
   }

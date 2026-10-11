@@ -1,3 +1,4 @@
+import { QueueControlService } from './services/QueueControlService.js';
 import { PlaybackControlService } from './services/PlaybackControlService.js';
 import { LyricsService } from './services/LyricsService.js';
 import { RecommendationService } from './services/RecommendationService.js';
@@ -124,6 +125,7 @@ const commandHandler = createSlashCommandHandler({
   statistics: new StatisticsService(database.history, database.library),
   policy,
   controls,
+  queueControls: new QueueControlService(music, database.repository, policy),
   library,
   recommendations,
   lyrics: new LyricsService(),
