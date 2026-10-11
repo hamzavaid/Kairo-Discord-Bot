@@ -38,7 +38,8 @@ const command: SlashCommand = {
       await i.editReply({ content: 'No listening history on this page.' });
       return;
     }
-    let hasNext = (await service.list(scope, page + 1, 10)).length > 0;
+    let hasNext =
+      page < 1000 && (await service.list(scope, page + 1, 10)).length > 0;
     const prefix = `kairo:history:${i.id}`;
     const render = () => ({
       content: [

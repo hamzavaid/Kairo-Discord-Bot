@@ -99,3 +99,24 @@ it('rechecks the server channel policy before queueing an old search result', as
   expect(admit).toHaveBeenCalled();
   expect(playTracks).not.toHaveBeenCalled();
 });
+
+it('search nickname defaults to five candidates while info keeps one result', async () => {
+  const music = {
+    info: vi.fn(async () => libraryTrack),
+    infoResults: vi.fn(async () => [libraryTrack]),
+  };
+  const make = (commandName: string) => ({
+    commandName,
+    id: commandName,
+    guildId: 'g',
+    user: { id: 'u' },
+    options: { getInteger: () => null, getString: () => 'song' },
+    deferReply: vi.fn(),
+    editReply: vi.fn(),
+  });
+  await info.execute(make('search') as never, { music } as never);
+  expect(music.infoResults).toHaveBeenCalledWith('song', 'g', 'u', 5);
+  expect(music.info).not.toHaveBeenCalled();
+  await info.execute(make('info') as never, { music } as never);
+  expect(music.info).toHaveBeenCalledWith('song', 'g', 'u');
+});

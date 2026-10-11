@@ -23,6 +23,7 @@ interface InteractionOptions {
   canManageGuild?: boolean;
   createdTimestamp?: number;
   websocketPing?: number;
+  searchCount?: number;
 }
 
 function createInteraction(name: string, options: InteractionOptions = {}) {
@@ -67,6 +68,7 @@ function createInteraction(name: string, options: InteractionOptions = {}) {
       }),
       getInteger: vi.fn((key: string) => {
         if (key === 'page') return options.page ?? null;
+        if (key === 'searchs') return options.searchCount ?? null;
         if (key === 'timeout_seconds') return options.timeoutSeconds ?? null;
         return null;
       }),
@@ -466,7 +468,7 @@ it('registers a nickname from its parent builder and executes/audits the same co
     name: 'search',
   });
   expect(handler.list().filter((c) => c.data.name === 'info')).toHaveLength(1);
-  const result = await run('search');
+  const result = await run('search', { searchCount: 1 });
   expect(music.info).toHaveBeenCalledWith('song', 'guild', 'user');
   expect(responseText(result)).toContain('Song');
   expect(audit.list(1, 1)[0]).toMatchObject({
@@ -496,7 +498,7 @@ it('applies parent developer authorization to nickname execution', async () => {
   const original = parent.developerOnly;
   try {
     parent.developerOnly = true;
-    await run('search');
+    await run('search', { searchCount: 1 });
     expect(music.info).not.toHaveBeenCalled();
     expect(audit.list(1, 1)[0]).toMatchObject({
       command: 'search',

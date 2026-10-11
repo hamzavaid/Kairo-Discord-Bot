@@ -36,6 +36,7 @@ export class RecommendationService {
           request.query,
           request.guildId,
           request.userId,
+          ...(request.signal ? [request.signal] : []),
         );
       if (!seed) {
         try {

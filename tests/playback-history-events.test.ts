@@ -95,3 +95,36 @@ describe('playback lifecycle history DTOs', () => {
     session.disconnect();
   });
 });
+
+it('estimates audible time deterministically without counting paused intervals', async () => {
+  let clock = 100;
+  const now = vi.spyOn(performance, 'now').mockImplementation(() => clock);
+  const { session, player, onAttempt } = setup();
+  try {
+    session.start(
+      {
+        id: 'timed',
+        track: libraryTrack as never,
+        enqueuedBy: 'u',
+        enqueuedAt: new Date(),
+      },
+      1,
+    );
+    await vi.waitFor(() => expect(player.play).toHaveBeenCalled());
+    player.emit('stateChange', { status: 'buffering' }, { status: 'playing' });
+    clock = 200;
+    session.pause();
+    clock = 700;
+    session.resume();
+    clock = 1000;
+    session.stop('completed');
+    expect(onAttempt.mock.calls.at(-1)?.[0]).toMatchObject({
+      status: 'completed',
+      listenedMs: 400,
+    });
+    expect(onAttempt).toHaveBeenCalledTimes(2);
+  } finally {
+    session.disconnect();
+    now.mockRestore();
+  }
+});

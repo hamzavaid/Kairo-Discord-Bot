@@ -49,8 +49,18 @@ export class MusicService {
     input: string,
     guildId: string,
     userId: string,
+    signal?: AbortSignal,
   ): Promise<Track> {
-    const result = await this.client.parse(input, guildId, userId);
+    const result = signal
+      ? await this.client.parse(
+          input,
+          guildId,
+          userId,
+          undefined,
+          undefined,
+          signal,
+        )
+      : await this.client.parse(input, guildId, userId);
     if (result.kind === 'track') return result.track;
     if (result.kind === 'search' && result.candidates[0])
       return result.candidates[0];
@@ -134,8 +144,13 @@ export class MusicService {
     };
   }
 
-  info(input: string, guildId: string, userId: string): Promise<Track> {
-    return this.resolve(input, guildId, userId);
+  info(
+    input: string,
+    guildId: string,
+    userId: string,
+    signal?: AbortSignal,
+  ): Promise<Track> {
+    return this.resolve(input, guildId, userId, signal);
   }
   async infoResults(
     input: string,

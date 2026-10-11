@@ -419,3 +419,23 @@ it('preserves play-next placement for already resolved result cards', async () =
   expect(engine.parse).not.toHaveBeenCalled();
   expect(engine.connectVoice).not.toHaveBeenCalled();
 });
+
+it('passes cancellation into single-track metadata resolution without playback', async () => {
+  const { engine, service } = setup();
+  const controller = new AbortController();
+  const resolve = service.info.bind(service) as (
+    input: string,
+    guild: string,
+    user: string,
+    signal?: AbortSignal,
+  ) => Promise<Track>;
+  await resolve('seed', 'guild', 'user', controller.signal);
+  expect(engine.parse).toHaveBeenCalledWith({
+    input: 'seed',
+    guildId: 'guild',
+    requestedBy: 'user',
+    signal: controller.signal,
+  });
+  expect(engine.connectVoice).not.toHaveBeenCalled();
+  expect(engine.enqueue).not.toHaveBeenCalled();
+});

@@ -1,3 +1,4 @@
+import { CommandError } from '../apps/bot/src/errors.js';
 import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
 import { DiscoveryService } from '../apps/bot/src/services/DiscoveryService.js';
@@ -125,4 +126,23 @@ it('serializes discovery edits so expiration cannot be overtaken by an in-flight
   release();
   await vi.waitFor(() => expect(editReply).toHaveBeenCalledTimes(3));
   expect(JSON.stringify(editReply.mock.calls.at(-1))).toContain('Menu expired');
+});
+
+it('opens useful empty discovery sections for a user without a seed', async () => {
+  const service = new DiscoveryService(
+    {} as never,
+    {
+      recommend: async () => {
+        throw new CommandError(
+          'RECOMMENDATION_UNAVAILABLE',
+          'Play or like a song first.',
+        );
+      },
+    } as never,
+    {} as never,
+    {} as never,
+  );
+  expect(
+    await service.load('recommended', { guildId: 'g', userId: 'new' }),
+  ).toMatchObject({ tracks: [], notice: 'Play or like a song first.' });
 });

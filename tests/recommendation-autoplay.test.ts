@@ -155,3 +155,19 @@ it.each(['disabled', 'failed', 'disconnected', 'empty'])(
     await service.close();
   },
 );
+
+it('cancels both query-seed resolution and recommendation candidate searches', async () => {
+  const signal = new AbortController().signal;
+  const info = vi.fn(async () => track('seed'));
+  const infoResults = vi.fn(async () => [track('new')]);
+  const service = new RecommendationService({ info, infoResults } as never);
+  await service.recommend({ query: 'seed', guildId: 'g', userId: 'u', signal });
+  expect(info).toHaveBeenCalledWith('seed', 'g', 'u', signal);
+  expect(infoResults).toHaveBeenCalledWith(
+    expect.any(String),
+    'g',
+    'u',
+    25,
+    signal,
+  );
+});

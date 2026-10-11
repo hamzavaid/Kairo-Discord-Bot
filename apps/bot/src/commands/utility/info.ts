@@ -15,7 +15,7 @@ const command: SlashCommand = {
     .addIntegerOption((option) =>
       option
         .setName('searchs')
-        .setDescription('Number of results to browse (default: 1)')
+        .setDescription('Number of results (info: 1, search: 5 by default)')
         .setMinValue(1)
         .setMaxValue(25),
     ),
@@ -24,7 +24,9 @@ const command: SlashCommand = {
   category: 'Utility',
   async execute(interaction, context) {
     await interaction.deferReply();
-    const count = interaction.options.getInteger('searchs') ?? 1;
+    const count =
+      interaction.options.getInteger('searchs') ??
+      (interaction.commandName === 'search' ? 5 : 1);
     const input = query(interaction);
     const guildId = guild(interaction);
     const tracks =
