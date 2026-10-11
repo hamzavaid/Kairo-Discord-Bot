@@ -20,6 +20,8 @@ describe('bot music adapter', () => {
       move: vi.fn(),
       shuffle: vi.fn(),
       setRepeat: vi.fn(),
+      setVolume: vi.fn(),
+      setFilter: vi.fn(),
       previous: vi.fn(),
       connectVoice: vi.fn(),
       disconnectVoice: vi.fn(),

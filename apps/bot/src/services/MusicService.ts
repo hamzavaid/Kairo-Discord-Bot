@@ -1,6 +1,7 @@
 import {
   MusicError,
   type QueueSnapshot,
+  type PlaybackSnapshot,
   type Track,
   type TrackCollection,
   type VoiceTarget,
@@ -233,6 +234,21 @@ export class MusicService {
     return this.client.previous(guildId);
   }
 
+  setVolume(guildId: string, volume: number): Promise<PlaybackSnapshot> {
+    return this.client.setVolume(guildId, volume);
+  }
+  setFilter(
+    guildId: string,
+    filter: import('@kairo/music-engine').FilterPreset,
+  ): Promise<PlaybackSnapshot> {
+    return this.client.setFilter(guildId, filter);
+  }
+  setRepeat(
+    guildId: string,
+    mode: import('@kairo/music-engine').RepeatMode,
+  ): Promise<QueueSnapshot> {
+    return this.client.setRepeat(guildId, mode);
+  }
   pause(guildId: string) {
     return this.client.pause(guildId);
   }

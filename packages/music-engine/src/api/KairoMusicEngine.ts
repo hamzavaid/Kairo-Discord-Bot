@@ -1,3 +1,8 @@
+import {
+  validateVolume,
+  validateFilter,
+  type FilterPreset,
+} from '../playback/PlaybackControls.js';
 import { MusicError } from './errors.js';
 import type { KairoMusicEvent, Unsubscribe } from './events.js';
 import type { FixtureTrack, ParseRequest, ParseResult } from './requests.js';
@@ -56,6 +61,9 @@ import type {
 } from '../matching/types.js';
 
 export interface EngineOptions {
+  playbackDefaultsForGuild?: (
+    guildId: string,
+  ) => Promise<{ volume: number; filter: FilterPreset; repeat: RepeatMode }>;
   maxCollectionItems?: number;
   fixtureTracks?: FixtureTrack[];
   providerPriority?: string[];
@@ -103,6 +111,8 @@ export interface KairoMusicEngine {
   connectVoice(target: VoiceTarget): Promise<PlaybackSnapshot>;
   disconnectVoice(guildId: string): Promise<PlaybackSnapshot>;
   getPlayback(guildId: string): PlaybackSnapshot;
+  setVolume(guildId: string, volume: number): Promise<PlaybackSnapshot>;
+  setFilter(guildId: string, filter: FilterPreset): Promise<PlaybackSnapshot>;
   pause(guildId: string): Promise<PlaybackSnapshot>;
   resume(guildId: string): Promise<PlaybackSnapshot>;
   on<T extends KairoMusicEvent['type']>(
@@ -422,6 +432,17 @@ export function createKairoMusicEngine(
       return lock(target.guildId).runExclusive(async () => {
         const connection = await voice.connect(target);
         const active = session(target.guildId);
+        if (
+          active.snapshot().state === 'DISCONNECTED' &&
+          options.playbackDefaultsForGuild
+        ) {
+          const defaults = await options.playbackDefaultsForGuild(
+            target.guildId,
+          );
+          active.setVolume(defaults.volume);
+          active.setFilter(defaults.filter);
+          await queues.setRepeat(target.guildId, defaults.repeat);
+        }
         active.attach(connection);
         sync(target.guildId, queues.snapshot(target.guildId));
         return active.snapshot();
@@ -450,8 +471,22 @@ export function createKairoMusicEngine(
           state: 'DISCONNECTED',
           current: undefined,
           generation: 0,
+          volume: 100,
+          filter: 'flat',
         }
       );
+    },
+    setVolume(guildId, volume) {
+      return lock(guildId).runExclusive(() => {
+        validateVolume(volume);
+        return session(guildId).setVolume(volume);
+      });
+    },
+    setFilter(guildId, filter) {
+      return lock(guildId).runExclusive(() => {
+        validateFilter(filter);
+        return session(guildId).setFilter(filter);
+      });
     },
     pause(guildId) {
       return lock(guildId).runExclusive(() => {

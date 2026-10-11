@@ -17,6 +17,8 @@ export interface PlaybackSnapshot {
   state: PlaybackState;
   current: QueueEntry | undefined;
   generation: number;
+  volume?: number;
+  filter?: import('../playback/PlaybackControls.js').FilterPreset;
 }
 
 /** Optional transport seam for deterministic tests and alternate host runtimes. */

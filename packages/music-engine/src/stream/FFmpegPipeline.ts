@@ -5,6 +5,11 @@ import {
 } from 'node:child_process';
 import type { AudioSource, PreparedAudio } from './AudioSource.js';
 import { AudioProbe } from './AudioProbe.js';
+import {
+  FILTER_GRAPHS,
+  validateFilter,
+  type FilterPreset,
+} from '../playback/PlaybackControls.js';
 import { MusicError } from '../api/errors.js';
 
 export interface FFmpegOptions {
@@ -20,8 +25,9 @@ export class FFmpegPipeline {
     this.executable = options.executable ?? 'ffmpeg';
   }
 
-  prepare(source: AudioSource): PreparedAudio {
-    if (!new AudioProbe().inspect(source).needsTranscode) {
+  prepare(source: AudioSource, filter: FilterPreset = 'flat'): PreparedAudio {
+    validateFilter(filter);
+    if (filter === 'flat' && !new AudioProbe().inspect(source).needsTranscode) {
       const input =
         source.kind === 'file' ? createReadStream(source.input) : source.input;
       let closed = false;
@@ -44,6 +50,7 @@ export class FFmpegPipeline {
       '-i',
       source.kind === 'file' ? source.input : 'pipe:0',
       '-vn',
+      ...(filter === 'flat' ? [] : ['-af', FILTER_GRAPHS[filter]]),
       '-c:a',
       'libopus',
       '-f',

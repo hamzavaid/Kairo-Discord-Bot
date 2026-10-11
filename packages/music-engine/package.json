@@ -15,6 +15,7 @@
   "dependencies": {
     "@discordjs/voice": "0.19.2",
     "kuromoji": "0.1.2",
+    "opusscript": "0.0.8",
     "wanakana": "5.3.1",
     "youtube-sr": "4.3.12",
     "zod": "^3.25.43"

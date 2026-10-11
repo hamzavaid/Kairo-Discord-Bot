@@ -14,6 +14,9 @@ import pauseCommand from './music/pause.js';
 import playCommand from './music/play.js';
 import playNextCommand from './music/playnext.js';
 import shuffleCommand from './music/shuffle.js';
+import volumeCommand from './music/volume.js';
+import repeatCommand from './music/repeat.js';
+import filterCommand from './music/filter.js';
 import playerCommand from './music/player.js';
 import queueCommand from './music/queue.js';
 import resumeCommand from './music/resume.js';
@@ -149,6 +152,9 @@ const builtInCommands: readonly SlashCommand[] = [
   likeCommand,
   dislikeCommand,
   menuCommand,
+  volumeCommand,
+  repeatCommand,
+  filterCommand,
 ];
 
 /** Build deployment payloads without constructing runtime services. */

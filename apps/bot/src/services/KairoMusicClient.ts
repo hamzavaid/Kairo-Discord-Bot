@@ -74,6 +74,21 @@ export class KairoMusicClient {
     return this.engine.getQueue(guildId);
   }
 
+  setVolume(guildId: string, volume: number): Promise<PlaybackSnapshot> {
+    return this.engine.setVolume(guildId, volume);
+  }
+  setFilter(
+    guildId: string,
+    filter: import('@kairo/music-engine').FilterPreset,
+  ): Promise<PlaybackSnapshot> {
+    return this.engine.setFilter(guildId, filter);
+  }
+  setRepeat(
+    guildId: string,
+    mode: import('@kairo/music-engine').RepeatMode,
+  ): Promise<QueueSnapshot> {
+    return this.engine.setRepeat(guildId, mode);
+  }
   pause(guildId: string): Promise<PlaybackSnapshot> {
     return this.engine.pause(guildId);
   }

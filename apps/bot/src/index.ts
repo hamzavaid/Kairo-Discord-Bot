@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { Client, Events, GatewayIntentBits, REST } from 'discord.js';
-import { connectGuildSettings } from '@kairo/data';
+import { normalizeGuildControls, connectGuildSettings } from '@kairo/data';
 import { createKairoMusicEngine } from '@kairo/music-engine';
 import { createLogger, parseEnvironment } from '@kairo/shared';
 import { AuditLog } from './commands/AuditLog.js';
@@ -32,6 +32,12 @@ const database = await connectGuildSettings(environment.MONGODB_URI, {
 });
 const engine = createKairoMusicEngine({
   ...createBotMusicOptions(environment),
+  playbackDefaultsForGuild: async (guildId) => {
+    const { volume, filter, repeat } = normalizeGuildControls(
+      (await database.repository.get(guildId)).controls,
+    );
+    return { volume, filter, repeat };
+  },
   audioQualityForGuild: async (guildId) =>
     (await database.repository.get(guildId)).audioQuality,
 });

@@ -5,9 +5,15 @@ import {
   NoSubscriberBehavior,
   StreamType,
   type AudioPlayer,
+  type AudioResource,
   type VoiceConnection,
   type PlayerSubscription,
 } from '@discordjs/voice';
+import {
+  validateVolume,
+  validateFilter,
+  type FilterPreset,
+} from './PlaybackControls.js';
 import { MusicError } from '../api/errors.js';
 import type { PlaybackSnapshot } from '../api/playback.js';
 import type { QueueEntry } from '../api/queue.js';
@@ -28,7 +34,7 @@ export interface PlaybackSessionOptions {
   resolver: Pick<StreamResolver, 'resolve'>;
   player?: AudioPlayer;
   createResource?: typeof createAudioResource;
-  prepare?: (source: AudioSource) => PreparedAudio;
+  prepare?: (source: AudioSource, filter?: FilterPreset) => PreparedAudio;
   onEnded?: (
     generation: number,
     cause: 'track-ended' | 'stream-failed',
@@ -60,7 +66,10 @@ const streamType: Record<string, StreamType> = {
 export class PlaybackSession {
   private readonly machine = new PlaybackStateMachine();
   private readonly player: AudioPlayer;
-  private readonly prepare: (source: AudioSource) => PreparedAudio;
+  private readonly prepare: (
+    source: AudioSource,
+    filter?: FilterPreset,
+  ) => PreparedAudio;
   private readonly createResource: typeof createAudioResource;
   private connection: VoiceConnection | undefined;
   private subscription: PlayerSubscription | undefined;
@@ -68,6 +77,9 @@ export class PlaybackSession {
   private prepared: PreparedAudio | undefined;
   private entry: QueueEntry | undefined;
   private generation = 0;
+  private volume = 100;
+  private filter: FilterPreset = 'flat';
+  private resource: AudioResource | undefined;
   private suppressed = new Set<number>();
   private bufferTimer: NodeJS.Timeout | undefined;
 
@@ -81,7 +93,8 @@ export class PlaybackSession {
     const pipeline = new FFmpegPipeline(
       options.ffmpegPath ? { executable: options.ffmpegPath } : {},
     );
-    this.prepare = options.prepare ?? ((source) => pipeline.prepare(source));
+    this.prepare =
+      options.prepare ?? ((source, filter) => pipeline.prepare(source, filter));
     this.player.on('stateChange', (oldState, newState) => {
       if (
         newState.status === AudioPlayerStatus.Playing &&
@@ -185,7 +198,7 @@ export class PlaybackSession {
       this.options.onSourceSelected?.(source, entry, audioQuality, generation);
       let prepared: PreparedAudio;
       try {
-        prepared = this.prepare(source);
+        prepared = this.prepare(source, this.filter);
       } catch (error) {
         source.dispose?.();
         throw error;
@@ -198,7 +211,10 @@ export class PlaybackSession {
       const resource = this.createResource(prepared.input, {
         inputType: streamType[prepared.inputType] ?? StreamType.Arbitrary,
         metadata: { generation },
+        inlineVolume: true,
       });
+      this.resource = resource;
+      resource.volume?.setVolume(this.volume / 100);
       this.transition('BUFFERING');
       this.bufferTimer = setTimeout(
         () =>
@@ -239,6 +255,17 @@ export class PlaybackSession {
     this.bufferTimer = undefined;
   }
 
+  setVolume(volume: number): PlaybackSnapshot {
+    validateVolume(volume);
+    this.volume = volume;
+    this.resource?.volume?.setVolume(volume / 100);
+    return this.snapshot();
+  }
+  setFilter(filter: FilterPreset): PlaybackSnapshot {
+    validateFilter(filter);
+    this.filter = filter;
+    return this.snapshot();
+  }
   pause(): PlaybackSnapshot {
     if (this.machine.state !== 'PLAYING' || !this.player.pause())
       throw new MusicError(
@@ -268,6 +295,7 @@ export class PlaybackSession {
     this.abort = undefined;
     this.prepared?.dispose();
     this.prepared = undefined;
+    this.resource = undefined;
     this.transition('STOPPING');
     this.player.stop(true);
     this.entry = undefined;
@@ -291,6 +319,8 @@ export class PlaybackSession {
       state: this.machine.state,
       current: this.entry ? structuredClone(this.entry) : undefined,
       generation: this.generation,
+      volume: this.volume,
+      filter: this.filter,
     };
   }
 }
