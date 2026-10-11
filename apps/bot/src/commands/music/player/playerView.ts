@@ -3,6 +3,7 @@ import {
   ButtonBuilder,
   ButtonStyle,
   ContainerBuilder,
+  StringSelectMenuBuilder,
   SectionBuilder,
   ThumbnailBuilder,
   MessageFlags,
@@ -10,6 +11,7 @@ import {
   TextDisplayBuilder,
   type MessageEditOptions,
 } from 'discord.js';
+import { FILTER_PRESETS } from '@kairo/data';
 import type {
   PlaybackSnapshot,
   QueueSnapshot,
@@ -25,6 +27,10 @@ import {
 export interface PlayerData {
   queue: QueueSnapshot;
   playback: PlaybackSnapshot;
+  autoplay?: boolean;
+  shared?: boolean;
+  lyricsAvailable?: boolean;
+  discoveryAvailable?: boolean;
 }
 export interface PlayerViewState {
   page: number;
@@ -167,6 +173,36 @@ export function playerView(
       controls('add', 'Add song', false),
     ),
   );
+  card.addActionRowComponents(
+    new ActionRowBuilder<ButtonBuilder>().addComponents(
+      controls('repeat', `Repeat: ${queue.repeatMode}`),
+      controls('autoplay', `Autoplay: ${data.autoplay ? 'on' : 'off'}`),
+      controls('volume-down', 'Volume -'),
+      controls('volume-up', 'Volume +'),
+      controls('lyrics', 'Lyrics', !current || !data.lyricsAvailable),
+    ),
+  );
+  card.addActionRowComponents(
+    new ActionRowBuilder<ButtonBuilder>().addComponents(
+      controls('unlike', 'Unlike', !current || !hasLibrary),
+      controls('discover', 'Discover', !data.discoveryAvailable),
+    ),
+  );
+  card.addActionRowComponents(
+    new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`${prefix}:filter:${queue.generation}`)
+        .setPlaceholder(`Filter: ${playback.filter ?? 'flat'} (next tracks)`)
+        .setDisabled(!state.active || state.busy)
+        .addOptions(
+          ...FILTER_PRESETS.map((value) => ({
+            label: value,
+            value,
+            default: value === (playback.filter ?? 'flat'),
+          })),
+        ),
+    ),
+  );
   const lines = queue.upcoming.slice((page - 1) * 10, page * 10).map(
     (entry, offset) =>
       `**${String((page - 1) * 10 + offset + 1).padStart(2, '0')}** ${heading(entry.track, 40)}  \`${entry.track.isLive ? 'Live' : duration(entry.track.durationMs)}\` \u00b7 ${entry.track.artists
@@ -184,7 +220,7 @@ export function playerView(
     .addSeparatorComponents(new SeparatorBuilder())
     .addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
-        `### Up next\n-# ${queue.upcoming.length + (current ? 1 : 0)} songs remaining \u00b7 ${current ? 1 : 0} current \u00b7 ${queue.upcoming.length} queued \u00b7 ${queue.history.length} played/skipped\n-# ${repeat}\n${lines.join('\n') || 'Your queue is clear. Add something you love.'}\n-# Page ${page}/${pages}`,
+        `### Up next\n-# Volume: ${playback.volume ?? 100}% \n-# ${queue.upcoming.length + (current ? 1 : 0)} songs remaining \u00b7 ${current ? 1 : 0} current \u00b7 ${queue.upcoming.length} queued \u00b7 ${queue.history.length} played/skipped\n-# ${repeat}\n${lines.join('\n') || 'Your queue is clear. Add something you love.'}\n-# Page ${page}/${pages}`,
       ),
     );
   if (queue.history.length)
@@ -226,7 +262,7 @@ export function playerView(
     .addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
         state.active
-          ? '-# Your player \u00b7 Auto-updates \u00b7 Controls expire after 5 minutes'
+          ? `-# ${data.shared ? 'Shared player: guild control policy applies' : 'Your player'} \u00b7 Auto-updates \u00b7 Controls expire after 5 minutes`
           : '-# Menu closed or expired \u00b7 Run /player to reopen. Music keeps playing.',
       ),
     );

@@ -229,43 +229,79 @@ export class MusicService {
     return this.client.getPlayback(guildId);
   }
 
-  shuffle(guildId: string) {
-    return this.client.shuffle(guildId);
+  shuffle(guildId: string, expectedGeneration?: number) {
+    return this.client.shuffle(
+      guildId,
+      ...(expectedGeneration === undefined ? [] : [expectedGeneration]),
+    );
   }
 
-  previous(guildId: string) {
-    return this.client.previous(guildId);
+  previous(guildId: string, expectedGeneration?: number) {
+    return this.client.previous(
+      guildId,
+      ...(expectedGeneration === undefined ? [] : [expectedGeneration]),
+    );
   }
 
-  setVolume(guildId: string, volume: number): Promise<PlaybackSnapshot> {
-    return this.client.setVolume(guildId, volume);
+  setVolume(
+    guildId: string,
+    volume: number,
+    expectedGeneration?: number,
+  ): Promise<PlaybackSnapshot> {
+    return this.client.setVolume(
+      guildId,
+      volume,
+      ...(expectedGeneration === undefined ? [] : [expectedGeneration]),
+    );
   }
   setFilter(
     guildId: string,
     filter: import('@kairo/music-engine').FilterPreset,
+    expectedGeneration?: number,
   ): Promise<PlaybackSnapshot> {
-    return this.client.setFilter(guildId, filter);
+    return this.client.setFilter(
+      guildId,
+      filter,
+      ...(expectedGeneration === undefined ? [] : [expectedGeneration]),
+    );
   }
   setRepeat(
     guildId: string,
     mode: import('@kairo/music-engine').RepeatMode,
+    expectedGeneration?: number,
   ): Promise<QueueSnapshot> {
-    return this.client.setRepeat(guildId, mode);
+    return this.client.setRepeat(
+      guildId,
+      mode,
+      ...(expectedGeneration === undefined ? [] : [expectedGeneration]),
+    );
   }
-  pause(guildId: string) {
-    return this.client.pause(guildId);
+  pause(guildId: string, expectedGeneration?: number) {
+    return this.client.pause(
+      guildId,
+      ...(expectedGeneration === undefined ? [] : [expectedGeneration]),
+    );
   }
 
-  resume(guildId: string) {
-    return this.client.resume(guildId);
+  resume(guildId: string, expectedGeneration?: number) {
+    return this.client.resume(
+      guildId,
+      ...(expectedGeneration === undefined ? [] : [expectedGeneration]),
+    );
   }
 
-  skip(guildId: string) {
-    return this.client.skip(guildId);
+  skip(guildId: string, expectedGeneration?: number) {
+    return this.client.skip(
+      guildId,
+      ...(expectedGeneration === undefined ? [] : [expectedGeneration]),
+    );
   }
 
-  stop(guildId: string) {
-    return this.client.stop(guildId);
+  stop(guildId: string, expectedGeneration?: number) {
+    return this.client.stop(
+      guildId,
+      ...(expectedGeneration === undefined ? [] : [expectedGeneration]),
+    );
   }
 
   async disconnect(guildId: string): Promise<void> {

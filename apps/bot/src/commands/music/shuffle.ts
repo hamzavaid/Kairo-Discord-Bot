@@ -9,6 +9,11 @@ const command: SlashCommand = {
   usage: '/shuffle',
   category: 'Music',
   async execute(interaction, context) {
+    if (context.controls) {
+      const content = await context.controls.perform('shuffle', interaction);
+      await interaction.reply({ content });
+      return;
+    }
     const queue = await context.music.shuffle(
       controlVoice(interaction, context.music),
     );

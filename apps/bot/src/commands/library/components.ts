@@ -47,7 +47,7 @@ async function report(
 }
 /** Only the returned message owns these controls; callbacks never share state across users. */
 export async function pages(
-  interaction: ChatInputCommandInteraction,
+  interaction: Pick<ChatInputCommandInteraction, 'id' | 'user' | 'editReply'>,
   context: CommandExecutionContext,
   title: string,
   lines: string[],

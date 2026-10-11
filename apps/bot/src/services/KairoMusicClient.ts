@@ -76,43 +76,91 @@ export class KairoMusicClient {
     return this.engine.getQueue(guildId);
   }
 
-  setVolume(guildId: string, volume: number): Promise<PlaybackSnapshot> {
-    return this.engine.setVolume(guildId, volume);
+  setVolume(
+    guildId: string,
+    volume: number,
+    expectedGeneration?: number,
+  ): Promise<PlaybackSnapshot> {
+    return this.engine.setVolume(
+      guildId,
+      volume,
+      ...(expectedGeneration === undefined ? [] : [expectedGeneration]),
+    );
   }
   setFilter(
     guildId: string,
     filter: import('@kairo/music-engine').FilterPreset,
+    expectedGeneration?: number,
   ): Promise<PlaybackSnapshot> {
-    return this.engine.setFilter(guildId, filter);
+    return this.engine.setFilter(
+      guildId,
+      filter,
+      ...(expectedGeneration === undefined ? [] : [expectedGeneration]),
+    );
   }
   setRepeat(
     guildId: string,
     mode: import('@kairo/music-engine').RepeatMode,
+    expectedGeneration?: number,
   ): Promise<QueueSnapshot> {
-    return this.engine.setRepeat(guildId, mode);
+    return this.engine.setRepeat(
+      guildId,
+      mode,
+      ...(expectedGeneration === undefined ? [] : [expectedGeneration]),
+    );
   }
-  pause(guildId: string): Promise<PlaybackSnapshot> {
-    return this.engine.pause(guildId);
-  }
-
-  resume(guildId: string): Promise<PlaybackSnapshot> {
-    return this.engine.resume(guildId);
-  }
-
-  skip(guildId: string): Promise<QueueSnapshot> {
-    return this.engine.skip(guildId);
-  }
-
-  shuffle(guildId: string): Promise<QueueSnapshot> {
-    return this.engine.shuffle(guildId);
+  pause(
+    guildId: string,
+    expectedGeneration?: number,
+  ): Promise<PlaybackSnapshot> {
+    return this.engine.pause(
+      guildId,
+      ...(expectedGeneration === undefined ? [] : [expectedGeneration]),
+    );
   }
 
-  previous(guildId: string): Promise<QueueSnapshot> {
-    return this.engine.previous(guildId);
+  resume(
+    guildId: string,
+    expectedGeneration?: number,
+  ): Promise<PlaybackSnapshot> {
+    return this.engine.resume(
+      guildId,
+      ...(expectedGeneration === undefined ? [] : [expectedGeneration]),
+    );
   }
 
-  stop(guildId: string): Promise<QueueSnapshot> {
-    return this.engine.stop(guildId);
+  skip(guildId: string, expectedGeneration?: number): Promise<QueueSnapshot> {
+    return this.engine.skip(
+      guildId,
+      ...(expectedGeneration === undefined ? [] : [expectedGeneration]),
+    );
+  }
+
+  shuffle(
+    guildId: string,
+    expectedGeneration?: number,
+  ): Promise<QueueSnapshot> {
+    return this.engine.shuffle(
+      guildId,
+      ...(expectedGeneration === undefined ? [] : [expectedGeneration]),
+    );
+  }
+
+  previous(
+    guildId: string,
+    expectedGeneration?: number,
+  ): Promise<QueueSnapshot> {
+    return this.engine.previous(
+      guildId,
+      ...(expectedGeneration === undefined ? [] : [expectedGeneration]),
+    );
+  }
+
+  stop(guildId: string, expectedGeneration?: number): Promise<QueueSnapshot> {
+    return this.engine.stop(
+      guildId,
+      ...(expectedGeneration === undefined ? [] : [expectedGeneration]),
+    );
   }
 
   disconnectVoice(guildId: string): Promise<PlaybackSnapshot> {

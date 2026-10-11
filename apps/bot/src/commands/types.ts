@@ -1,3 +1,4 @@
+import type { PlaybackControlService } from '../services/PlaybackControlService.js';
 import type { LyricsService } from '../services/LyricsService.js';
 import type { RecommendationService } from '../services/RecommendationService.js';
 import type { HistoryService } from '../services/HistoryService.js';
@@ -20,6 +21,7 @@ export interface CommandServices {
   settings: GuildSettingsRepository;
   library?: LibraryService;
   policy?: PlaybackPolicyService;
+  controls?: PlaybackControlService;
   history?: HistoryService;
   recommendations?: RecommendationService;
   lyrics?: LyricsService;
@@ -31,7 +33,7 @@ export interface CommandServices {
 export interface CommandExecutionContext extends CommandServices {
   isDeveloper: boolean;
   commands: ReadonlyMap<string, SlashCommand>;
-  reportComponentError?: (error: unknown) => void;
+  reportComponentError?: (error: unknown, actorUserId?: string) => void;
   componentErrorMessage?: (error: unknown) => string;
 }
 

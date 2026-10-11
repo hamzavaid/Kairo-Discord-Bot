@@ -15,7 +15,9 @@ export class CommandError extends Error {
       | 'HISTORY_EMPTY'
       | 'RECOMMENDATION_UNAVAILABLE'
       | 'LYRICS_PROVIDER_UNAVAILABLE'
-      | 'LYRICS_NOT_FOUND',
+      | 'LYRICS_NOT_FOUND'
+      | 'VOTE_ALREADY_CAST'
+      | 'VOTE_NOT_REQUIRED',
     message: string,
     options?: ErrorOptions,
   ) {

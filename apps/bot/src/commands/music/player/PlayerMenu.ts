@@ -1,3 +1,7 @@
+import { normalizeGuildControls } from '@kairo/data';
+import { lyricsChunks, resolveLyrics } from '../../utility/lyrics.js';
+import { pages } from '../../library/components.js';
+import { showTrackResults } from '../../utility/TrackResultMenu.js';
 import {
   LabelBuilder,
   MessageFlags,
@@ -31,6 +35,14 @@ const actions = new Set([
   'close',
   'queue-prev',
   'queue-next',
+  'repeat',
+  'autoplay',
+  'volume-down',
+  'volume-up',
+  'lyrics',
+  'unlike',
+  'filter',
+  'discover',
 ]);
 const trackActions = new Set([
   'previous',
@@ -39,6 +51,14 @@ const trackActions = new Set([
   'skip',
   'stop',
   'like',
+  'unlike',
+  'shuffle',
+  'repeat',
+  'autoplay',
+  'volume-down',
+  'volume-up',
+  'filter',
+  'lyrics',
 ]);
 /** Message-local UI only. All playback and library state lives in services. */
 export class PlayerMenu {
@@ -57,15 +77,22 @@ export class PlayerMenu {
   constructor(
     private readonly interaction: ChatInputCommandInteraction,
     private readonly context: CommandExecutionContext,
+    private readonly shared = false,
   ) {
     this.prefix = `kairo:player:${interaction.id}`;
     this.state.liked = this.liked;
   }
-  private load() {
+  private async load() {
     const guildId = this.interaction.guildId!;
     this.data = {
       queue: this.context.music.queue(guildId),
       playback: this.context.music.playback(guildId),
+      autoplay: normalizeGuildControls(
+        (await this.context.settings?.get(guildId))?.controls,
+      ).autoplay,
+      shared: this.shared,
+      lyricsAvailable: Boolean(this.context.lyrics),
+      discoveryAvailable: Boolean(this.context.recommendations),
     };
     this.state.page = Math.max(
       1,
@@ -78,7 +105,11 @@ export class PlayerMenu {
   private render(busy = this.state.busy) {
     return playerView(
       this.data,
-      { ...this.state, busy },
+      {
+        ...this.state,
+        busy,
+        ...(this.shared ? { liked: new Set<string>() } : {}),
+      },
       this.prefix,
       Boolean(this.context.library),
     );
@@ -110,25 +141,32 @@ export class PlayerMenu {
     return { name, generation: Number(generation) };
   }
   async start() {
-    this.load();
+    await this.load();
     const message = await this.edit();
     const collector = message.createMessageComponentCollector({
       time: 300_000,
       filter: (i) =>
         this.state.active &&
-        i.user.id === this.interaction.user.id &&
+        (this.shared || i.user.id === this.interaction.user.id) &&
         this.action(i.customId) !== undefined,
     });
     collector.on('collect', (i) => {
       if (
         !this.state.active ||
-        i.user.id !== this.interaction.user.id ||
-        !i.isButton()
+        (!this.shared && i.user.id !== this.interaction.user.id) ||
+        (!i.isButton() && !i.isStringSelectMenu())
       )
         return;
       const action = this.action(i.customId);
       if (!action) return;
       if (action.name === 'close') {
+        if (i.user.id !== this.interaction.user.id) {
+          void i.reply({
+            content: 'Only the menu creator can close this player.',
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
         this.state.active = false;
         clearInterval(this.timer);
         collector.stop('closed');
@@ -148,11 +186,22 @@ export class PlayerMenu {
         return;
       }
       this.state.busy = true;
+      const started = Date.now();
       void this.execute(i, action)
+        .then(() =>
+          this.context.audit?.record({
+            command: `player:${action.name}`,
+            guildId: this.interaction.guildId!,
+            userId: i.user.id,
+            timestamp: new Date(started).toISOString(),
+            success: true,
+            durationMs: Date.now() - started,
+          }),
+        )
         .catch((error) => this.failure(error, i))
         .finally(async () => {
           try {
-            this.load();
+            await this.load();
             await this.edit(false);
           } catch (error) {
             this.context.reportComponentError?.(error);
@@ -173,7 +222,7 @@ export class PlayerMenu {
       this.state.busy = true;
       void (async () => {
         try {
-          this.load();
+          await this.load();
           // Automatic updates keep controls available; busy only guards admission.
           await this.edit(false);
         } catch (error) {
@@ -190,12 +239,60 @@ export class PlayerMenu {
     i: MessageComponentInteraction,
     action: { name: string; generation: number },
   ) {
+    if (i.guildId !== this.interaction.guildId)
+      throw new CommandError(
+        'STALE_PLAYER',
+        'This player belongs to another server.',
+      );
     if (action.name === 'add') {
       await this.add(i);
       return;
     }
+    if (action.name === 'lyrics' || action.name === 'discover') {
+      await i.deferReply({ flags: MessageFlags.Ephemeral });
+      await this.load();
+      if (action.generation !== this.data.queue.generation)
+        throw new CommandError(
+          'STALE_PLAYER',
+          'The song changed. Refresh the player.',
+        );
+      if (action.name === 'lyrics') {
+        const track = this.data.queue.current?.track;
+        if (!track)
+          throw new CommandError('STALE_PLAYER', 'There is no current song.');
+        const result = await resolveLyrics(this.context, track);
+        if (result.kind === 'lyrics')
+          await pages(
+            i,
+            this.context,
+            `Lyrics - ${track.title.slice(0, 80)}`,
+            lyricsChunks(result.text),
+            1,
+            1,
+          );
+        else
+          await i.editReply({
+            content:
+              result.kind === 'instrumental'
+                ? 'This track is instrumental.'
+                : 'No lyrics were found.',
+          });
+      } else {
+        if (!this.context.recommendations)
+          throw new CommandError(
+            'RECOMMENDATION_UNAVAILABLE',
+            'Recommendations are unavailable.',
+          );
+        const tracks = await this.context.recommendations.recommend({
+          guildId: i.guildId!,
+          userId: i.user.id,
+        });
+        await showTrackResults(i, this.context, tracks);
+      }
+      return;
+    }
     await i.deferUpdate();
-    this.load();
+    await this.load();
     delete this.state.notice;
     if (
       trackActions.has(action.name) &&
@@ -212,6 +309,95 @@ export class PlayerMenu {
       )
     )
       voiceTarget(i, this.context);
+    if (
+      this.context.controls &&
+      ['previous', 'pause', 'resume', 'skip', 'stop', 'shuffle'].includes(
+        action.name,
+      )
+    ) {
+      this.state.notice = await this.context.controls.perform(
+        action.name as import('../../../services/PlaybackPolicyService.js').PlaybackAction,
+        i,
+        action.generation,
+      );
+      return;
+    }
+    if (
+      ['repeat', 'autoplay', 'volume-down', 'volume-up', 'filter'].includes(
+        action.name,
+      )
+    ) {
+      if (!this.context.controls)
+        throw new CommandError(
+          'DJ_PERMISSION_REQUIRED',
+          'Advanced player controls are unavailable.',
+        );
+      if (action.name === 'autoplay') {
+        await this.context.policy?.authorize(
+          i,
+          this.context.music,
+          this.context.settings,
+          'repeat',
+        );
+        if (!this.context.settings.setControls)
+          throw new CommandError(
+            'INVALID_SETTING',
+            'Autoplay settings are unavailable.',
+          );
+        await this.context.settings.setControls(guildId, {
+          autoplay: !this.data.autoplay,
+        });
+        await this.context.onSettingsChanged?.(guildId);
+      } else if (action.name === 'repeat') {
+        const modes = ['off', 'track', 'queue'] as const;
+        const mode =
+          modes[(modes.indexOf(this.data.queue.repeatMode) + 1) % 3]!;
+        this.state.notice = await this.context.controls.perform(
+          'repeat',
+          i,
+          action.generation,
+          mode,
+        );
+      } else if (action.name === 'filter') {
+        if (!i.isStringSelectMenu()) return;
+        this.state.notice = await this.context.controls.perform(
+          'filter',
+          i,
+          action.generation,
+          i.values[0],
+        );
+      } else {
+        const amount = Math.max(
+          0,
+          Math.min(
+            100,
+            (this.data.playback.volume ?? 100) +
+              (action.name === 'volume-up' ? 10 : -10),
+          ),
+        );
+        this.state.notice = await this.context.controls.perform(
+          'volume',
+          i,
+          action.generation,
+          amount,
+        );
+      }
+      return;
+    }
+    if (action.name === 'unlike') {
+      const entry = this.data.queue.current;
+      if (!entry)
+        throw new CommandError('STALE_PLAYER', 'There is no current song.');
+      const removed = await library(this.context).unlikeSaved(
+        i.user.id,
+        entry.track,
+      );
+      this.liked.delete(entry.id);
+      this.state.notice = removed
+        ? 'Removed from your Liked Songs.'
+        : 'This song is not in your Liked Songs.';
+      return;
+    }
     if (action.name === 'pause') await this.context.music.pause(guildId);
     else if (action.name === 'resume') await this.context.music.resume(guildId);
     else if (action.name === 'previous')
@@ -229,7 +415,7 @@ export class PlayerMenu {
           'There is no current song to like.',
         );
       const result = await library(this.context).likeSaved(
-        this.interaction.user.id,
+        i.user.id,
         entry.track,
       );
       this.liked.add(entry.id);
@@ -260,8 +446,7 @@ export class PlayerMenu {
     const response = i
       .awaitModalSubmit({
         time: Math.max(1, Math.min(60_000, this.deadline - Date.now())),
-        filter: (s) =>
-          s.user.id === this.interaction.user.id && s.customId === id,
+        filter: (s) => s.user.id === i.user.id && s.customId === id,
       })
       .then(
         (value) => ({ value }),
@@ -292,7 +477,7 @@ export class PlayerMenu {
       const target = voiceTarget(submitted, this.context);
       const outcome = await this.context.music.play({
         guildId: target.guildId,
-        userId: this.interaction.user.id,
+        userId: submitted.user.id,
         query: submitted.fields.getTextInputValue('query').trim(),
         voiceTarget: target,
       });
@@ -306,7 +491,7 @@ export class PlayerMenu {
     error: unknown,
     i: MessageComponentInteraction | ModalSubmitInteraction,
   ) {
-    this.context.reportComponentError?.(error);
+    this.context.reportComponentError?.(error, i.user.id);
     const response = {
       content:
         this.context.componentErrorMessage?.(error) ??

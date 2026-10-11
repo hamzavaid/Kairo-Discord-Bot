@@ -90,7 +90,7 @@ export class LibraryService {
   likeSaved(owner: string, track: SavedTrack | Track) {
     return this.repository.like(owner, saveTrack(track));
   }
-  unlikeSaved(owner: string, track: SavedTrack) {
+  unlikeSaved(owner: string, track: SavedTrack | Track) {
     return this.repository.unlike(owner, trackIdentity(saveTrack(track)));
   }
   addSaved(owner: string, name: string, track: SavedTrack | Track) {

@@ -1,3 +1,4 @@
+import voteCommand from './music/vote.js';
 import lyricsCommand from './utility/lyrics.js';
 import autoplayCommand from './music/autoplay.js';
 import recommendCommand from './utility/recommend.js';
@@ -82,6 +83,9 @@ function safeFailure(error: unknown): { code: string; message: string } {
       STREAM_UNAVAILABLE: 'This song has no playable audio source.',
       VOICE_JOIN_ERROR: 'Could not join the voice channel.',
       INVALID_PLAYBACK_TRANSITION: 'Playback is not in the required state.',
+      STALE_PLAYBACK: 'The song changed. Refresh the player and try again.',
+      INVALID_VOLUME: 'Choose a volume from 0 to 100.',
+      UNKNOWN_FILTER: 'Choose a supported filter preset.',
       PROVIDER_AUTH_REQUIRED:
         'This source requires account authorization. Ask the bot owner to authorize the music provider.',
       PROVIDER_ACCESS_DENIED:
@@ -167,6 +171,7 @@ const builtInCommands: readonly SlashCommand[] = [
   autoplayCommand,
   recommendCommand,
   lyricsCommand,
+  voteCommand,
 ];
 
 /** Build deployment payloads without constructing runtime services. */
@@ -278,29 +283,41 @@ export class SlashCommandHandler {
           interaction.channelId,
           controls,
         );
+        const name = command.data.name;
+        const transports = [
+          'pause',
+          'resume',
+          'skip',
+          'stop',
+          'disconnect',
+          'shuffle',
+        ];
+        const mutateSetting =
+          (name === 'volume' &&
+            interaction.options.getInteger('amount') !== null) ||
+          (name === 'repeat' &&
+            interaction.options.getString('mode') !== null) ||
+          (name === 'filter' &&
+            interaction.options.getString('preset') !== 'status') ||
+          (name === 'autoplay' &&
+            ['on', 'off'].includes(
+              interaction.options.getString('mode') ?? 'status',
+            ));
         if (
-          [
-            'pause',
-            'resume',
-            'skip',
-            'stop',
-            'disconnect',
-            'shuffle',
-            'volume',
-            'filter',
-            'repeat',
-          ].includes(command.data.name)
+          (transports.includes(name) && !this.options.controls) ||
+          mutateSetting
         )
           await this.options.policy.authorize(
             interaction,
             this.options.music,
             this.options.settings,
-            command.data.name as PlaybackAction,
+            name === 'autoplay' ? 'repeat' : (name as PlaybackAction),
             this.options.music.queue(guildId).current?.enqueuedBy,
           );
       }
       const context: CommandExecutionContext = {
         music: this.options.music,
+        ...(this.options.controls ? { controls: this.options.controls } : {}),
         ...(this.options.lyrics ? { lyrics: this.options.lyrics } : {}),
         ...(this.options.recommendations
           ? { recommendations: this.options.recommendations }
@@ -322,13 +339,19 @@ export class SlashCommandHandler {
         isDeveloper,
         commands: this.commands,
         componentErrorMessage: (error) => safeFailure(error).message,
-        reportComponentError: (error) => {
+        reportComponentError: (error, actorUserId) => {
           const safe = safeFailure(error);
-          this.report(error, commandName, guildId, userId, safe.code);
+          this.report(
+            error,
+            commandName,
+            guildId,
+            actorUserId ?? userId,
+            safe.code,
+          );
           this.options.audit.record({
             command: `${commandName}:component`,
             ...(guildId ? { guildId } : {}),
-            userId,
+            userId: actorUserId ?? userId,
             timestamp: new Date().toISOString(),
             success: false,
             durationMs: 0,

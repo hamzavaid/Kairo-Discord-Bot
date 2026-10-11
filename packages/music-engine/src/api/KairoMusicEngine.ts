@@ -103,21 +103,42 @@ export interface KairoMusicEngine {
     request: EnqueueRequest & { expectedGeneration: number },
   ): Promise<boolean>;
   getQueue(guildId: string): QueueSnapshot;
-  skip(guildId: string): Promise<QueueSnapshot>;
-  stop(guildId: string): Promise<QueueSnapshot>;
+  skip(guildId: string, expectedGeneration?: number): Promise<QueueSnapshot>;
+  stop(guildId: string, expectedGeneration?: number): Promise<QueueSnapshot>;
   clear(guildId: string): Promise<QueueSnapshot>;
   remove(request: RemoveRequest): Promise<QueueSnapshot>;
   move(request: MoveRequest): Promise<QueueSnapshot>;
-  shuffle(guildId: string): Promise<QueueSnapshot>;
-  setRepeat(guildId: string, mode: RepeatMode): Promise<QueueSnapshot>;
-  previous(guildId: string): Promise<QueueSnapshot>;
+  shuffle(guildId: string, expectedGeneration?: number): Promise<QueueSnapshot>;
+  setRepeat(
+    guildId: string,
+    mode: RepeatMode,
+    expectedGeneration?: number,
+  ): Promise<QueueSnapshot>;
+  previous(
+    guildId: string,
+    expectedGeneration?: number,
+  ): Promise<QueueSnapshot>;
   connectVoice(target: VoiceTarget): Promise<PlaybackSnapshot>;
   disconnectVoice(guildId: string): Promise<PlaybackSnapshot>;
   getPlayback(guildId: string): PlaybackSnapshot;
-  setVolume(guildId: string, volume: number): Promise<PlaybackSnapshot>;
-  setFilter(guildId: string, filter: FilterPreset): Promise<PlaybackSnapshot>;
-  pause(guildId: string): Promise<PlaybackSnapshot>;
-  resume(guildId: string): Promise<PlaybackSnapshot>;
+  setVolume(
+    guildId: string,
+    volume: number,
+    expectedGeneration?: number,
+  ): Promise<PlaybackSnapshot>;
+  setFilter(
+    guildId: string,
+    filter: FilterPreset,
+    expectedGeneration?: number,
+  ): Promise<PlaybackSnapshot>;
+  pause(
+    guildId: string,
+    expectedGeneration?: number,
+  ): Promise<PlaybackSnapshot>;
+  resume(
+    guildId: string,
+    expectedGeneration?: number,
+  ): Promise<PlaybackSnapshot>;
   on<T extends KairoMusicEvent['type']>(
     type: T,
     listener: (event: Extract<KairoMusicEvent, { type: T }>) => void,
@@ -260,6 +281,19 @@ export function createKairoMusicEngine(
     return mutex;
   }
 
+  function assertGeneration(
+    guildId: string,
+    expectedGeneration?: number,
+  ): void {
+    if (
+      expectedGeneration !== undefined &&
+      queues.snapshot(guildId).generation !== expectedGeneration
+    )
+      throw new MusicError(
+        'STALE_PLAYBACK',
+        'The song changed. Refresh the player and try again.',
+      );
+  }
   function session(guildId: string): PlaybackSession {
     let current = sessions.get(guildId);
     if (!current) {
@@ -419,9 +453,10 @@ export function createKairoMusicEngine(
     getQueue(guildId) {
       return queues.snapshot(guildId);
     },
-    skip(guildId) {
+    skip(guildId, expectedGeneration) {
       const observed = queues.snapshot(guildId).generation;
       return lock(guildId).runExclusive(async () => {
+        assertGeneration(guildId, expectedGeneration);
         if (queues.snapshot(guildId).generation !== observed)
           return queues.snapshot(guildId);
         const finished = queues.snapshot(guildId).current;
@@ -440,8 +475,9 @@ export function createKairoMusicEngine(
         return snapshot;
       });
     },
-    stop(guildId) {
+    stop(guildId, expectedGeneration) {
       return lock(guildId).runExclusive(async () => {
+        assertGeneration(guildId, expectedGeneration);
         sessions.get(guildId)?.stop();
         return queues.stop(guildId);
       });
@@ -455,14 +491,21 @@ export function createKairoMusicEngine(
     move(request) {
       return queues.move(request);
     },
-    shuffle(guildId) {
-      return queues.shuffle(guildId);
+    shuffle(guildId, expectedGeneration) {
+      return lock(guildId).runExclusive(() => {
+        assertGeneration(guildId, expectedGeneration);
+        return queues.shuffle(guildId);
+      });
     },
-    setRepeat(guildId, mode) {
-      return queues.setRepeat(guildId, mode);
+    setRepeat(guildId, mode, expectedGeneration) {
+      return lock(guildId).runExclusive(() => {
+        assertGeneration(guildId, expectedGeneration);
+        return queues.setRepeat(guildId, mode);
+      });
     },
-    previous(guildId) {
+    previous(guildId, expectedGeneration) {
       return lock(guildId).runExclusive(async () => {
+        assertGeneration(guildId, expectedGeneration);
         if (!queues.snapshot(guildId).history.length)
           throw new MusicError(
             'QUEUE_EMPTY',
@@ -522,20 +565,23 @@ export function createKairoMusicEngine(
         }
       );
     },
-    setVolume(guildId, volume) {
+    setVolume(guildId, volume, expectedGeneration) {
       return lock(guildId).runExclusive(() => {
+        assertGeneration(guildId, expectedGeneration);
         validateVolume(volume);
         return session(guildId).setVolume(volume);
       });
     },
-    setFilter(guildId, filter) {
+    setFilter(guildId, filter, expectedGeneration) {
       return lock(guildId).runExclusive(() => {
+        assertGeneration(guildId, expectedGeneration);
         validateFilter(filter);
         return session(guildId).setFilter(filter);
       });
     },
-    pause(guildId) {
+    pause(guildId, expectedGeneration) {
       return lock(guildId).runExclusive(() => {
+        assertGeneration(guildId, expectedGeneration);
         const active = sessions.get(guildId);
         if (!active)
           throw new MusicError(
@@ -545,8 +591,9 @@ export function createKairoMusicEngine(
         return active.pause();
       });
     },
-    resume(guildId) {
+    resume(guildId, expectedGeneration) {
       return lock(guildId).runExclusive(() => {
+        assertGeneration(guildId, expectedGeneration);
         const active = sessions.get(guildId);
         if (!active)
           throw new MusicError(

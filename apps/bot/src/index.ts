@@ -1,3 +1,4 @@
+import { PlaybackControlService } from './services/PlaybackControlService.js';
 import { LyricsService } from './services/LyricsService.js';
 import { RecommendationService } from './services/RecommendationService.js';
 import { AutoplayService } from './services/AutoplayService.js';
@@ -115,11 +116,14 @@ const autoplay = new AutoplayService(
   },
 );
 autoplay.attach();
+const policy = new PlaybackPolicyService();
+const controls = new PlaybackControlService(music, database.repository, policy);
 const commandHandler = createSlashCommandHandler({
   music,
   history,
   statistics: new StatisticsService(database.history, database.library),
-  policy: new PlaybackPolicyService(),
+  policy,
+  controls,
   library,
   recommendations,
   lyrics: new LyricsService(),
@@ -145,6 +149,7 @@ client.on(Events.VoiceStateUpdate, (oldState, newState) => {
     !newState.channelId
   ) {
     idle.cancel(guildId);
+    controls.votes.cancel(guildId);
     music.forgetVoiceChannel(guildId);
     void music
       .disconnect(guildId)
@@ -154,6 +159,11 @@ client.on(Events.VoiceStateUpdate, (oldState, newState) => {
     return;
   }
   void refreshIdle(guildId);
+  void controls
+    .reconcile({ guild: newState.guild, guildId })
+    .catch((error) =>
+      logger.error({ err: error, guildId }, 'Skip vote reconciliation failed'),
+    );
 });
 
 client.once(Events.ClientReady, async () => {
@@ -204,6 +214,7 @@ async function close(): Promise<void> {
   if (closing) return;
   closing = true;
   idle.shutdown();
+  controls.votes.clear();
   await autoplay.close();
   await engine.shutdown();
   await history.close();

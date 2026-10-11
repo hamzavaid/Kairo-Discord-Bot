@@ -82,6 +82,7 @@ export class PlaybackPolicyService {
     controls: GuildControls,
     now = Date.now(),
   ): void {
+    if (['settings', 'auditlog', 'help', 'ping'].includes(command)) return;
     if (
       channelId &&
       (controls.blockedTextChannels.includes(channelId) ||
@@ -118,7 +119,10 @@ export class PlaybackPolicyService {
     this.cooldowns.set(key, now + controls.cooldownSeconds * 1000);
   }
   async authorize(
-    interaction: RepliableInteraction,
+    interaction: Pick<
+      RepliableInteraction,
+      'guildId' | 'guild' | 'user' | 'memberPermissions'
+    >,
     music: MusicService,
     settings: {
       get(id: string): Promise<{ controls?: Partial<GuildControls> }>;

@@ -10,6 +10,11 @@ const command: SlashCommand = {
   nicknames: ['leave'],
   category: 'Music',
   async execute(interaction, context) {
+    if (context.controls) {
+      const content = await context.controls.perform('disconnect', interaction);
+      await interaction.reply({ content });
+      return;
+    }
     await context.music.disconnect(guild(interaction));
     await interaction.reply({ content: 'Disconnected from voice.' });
   },

@@ -10,6 +10,11 @@ const command: SlashCommand = {
   nicknames: ['s', 'next'],
   category: 'Music',
   async execute(interaction, context) {
+    if (context.controls) {
+      const content = await context.controls.perform('skip', interaction);
+      await interaction.reply({ content });
+      return;
+    }
     await context.music.skip(controlVoice(interaction, context.music));
     await interaction.reply({ content: 'Skipped.' });
   },

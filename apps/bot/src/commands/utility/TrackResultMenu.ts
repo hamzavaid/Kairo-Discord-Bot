@@ -16,7 +16,7 @@ import type { CommandExecutionContext } from '../types.js';
 import { infoCard } from './formatTrack.js';
 import { library, voiceTarget } from '../library/helpers.js';
 export async function showTrackResults(
-  interaction: ChatInputCommandInteraction,
+  interaction: Pick<ChatInputCommandInteraction, 'id' | 'user' | 'editReply'>,
   context: CommandExecutionContext,
   tracks: Track[],
 ) {
