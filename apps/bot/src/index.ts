@@ -1,3 +1,5 @@
+import { RecommendationService } from './services/RecommendationService.js';
+import { AutoplayService } from './services/AutoplayService.js';
 import { StatisticsService } from './services/StatisticsService.js';
 import { existsSync } from 'node:fs';
 import { Client, Events, GatewayIntentBits, REST } from 'discord.js';
@@ -93,16 +95,39 @@ const refreshIdle = async (guildId: string): Promise<void> => {
     .catch(() => logger.error({ guildId }, 'Voice idle check failed'));
 };
 
+const library = new LibraryService(database.library, music);
+const recommendations = new RecommendationService(music, history, library);
+const autoplay = new AutoplayService(
+  engine,
+  database.repository,
+  recommendations,
+  (error) => logger.warn({ err: error }, 'Autoplay discovery failed'),
+  (guildId) => {
+    const id = music.voiceChannel(guildId);
+    const guild = client.guilds.cache.get(guildId);
+    return Boolean(
+      id &&
+      guild?.voiceStates.cache.some(
+        (state) => state.channelId === id && state.member?.user.bot === false,
+      ),
+    );
+  },
+);
+autoplay.attach();
 const commandHandler = createSlashCommandHandler({
   music,
   history,
   statistics: new StatisticsService(database.history, database.library),
   policy: new PlaybackPolicyService(),
-  library: new LibraryService(database.library, music),
+  library,
+  recommendations,
   audit,
   settings: database.repository,
   developerIds,
-  onSettingsChanged: refreshIdle,
+  onSettingsChanged: async (guildId) => {
+    await refreshIdle(guildId);
+    await autoplay.settingsChanged(guildId);
+  },
   onVoiceActivity: refreshIdle,
   reportError: (error, context) =>
     logger.error({ err: error, ...context }, 'Command execution failed'),
@@ -177,6 +202,7 @@ async function close(): Promise<void> {
   if (closing) return;
   closing = true;
   idle.shutdown();
+  await autoplay.close();
   await engine.shutdown();
   await history.close();
   await audit.drain();

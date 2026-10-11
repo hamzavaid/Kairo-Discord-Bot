@@ -49,6 +49,7 @@ export class QueueManager {
     tracks: readonly Track[],
     enqueuedBy: string,
     position: 'next' | 'last' = 'last',
+    source: 'manual' | 'autoplay' = 'manual',
   ): Promise<QueueSnapshot> {
     const queue = this.queue(guildId);
     return queue.mutex.runExclusive(() => {
@@ -69,6 +70,7 @@ export class QueueManager {
         track: structuredClone(track),
         enqueuedBy,
         enqueuedAt: this.now(),
+        ...(source === 'autoplay' ? { source } : {}),
       }));
       queue.enqueue(entries, position);
       return queue.snapshot();

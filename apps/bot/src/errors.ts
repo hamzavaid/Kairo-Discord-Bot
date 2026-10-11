@@ -12,10 +12,12 @@ export class CommandError extends Error {
       | 'COMMAND_COOLDOWN'
       | 'CHANNEL_BLOCKED'
       | 'INVALID_SETTING'
-      | 'HISTORY_EMPTY',
+      | 'HISTORY_EMPTY'
+      | 'RECOMMENDATION_UNAVAILABLE',
     message: string,
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
     this.name = 'CommandError';
   }
 }

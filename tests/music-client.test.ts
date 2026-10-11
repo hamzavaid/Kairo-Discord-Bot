@@ -12,6 +12,7 @@ describe('bot music adapter', () => {
       matchCandidates: vi.fn(),
       enqueue: vi.fn(),
       enqueueMany: vi.fn(),
+      enqueueAutoplay: vi.fn(),
       getQueue: vi.fn(),
       skip: vi.fn(),
       stop: vi.fn(),

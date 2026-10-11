@@ -99,6 +99,9 @@ export interface KairoMusicEngine {
   matchCandidates(request: MatchRequest): MatchResult;
   enqueue(request: EnqueueRequest): Promise<QueueSnapshot>;
   enqueueMany(request: EnqueueManyRequest): Promise<QueueSnapshot>;
+  enqueueAutoplay(
+    request: EnqueueRequest & { expectedGeneration: number },
+  ): Promise<boolean>;
   getQueue(guildId: string): QueueSnapshot;
   skip(guildId: string): Promise<QueueSnapshot>;
   stop(guildId: string): Promise<QueueSnapshot>;
@@ -339,12 +342,22 @@ export function createKairoMusicEngine(
   ): Promise<void> {
     await lock(guildId).runExclusive(async () => {
       if (queues.snapshot(guildId).generation !== generation) return;
+      const finished = queues.snapshot(guildId).current;
       const snapshot = await queues.advance(
         guildId,
         generation,
         cause === 'track-ended' ? 'track-ended' : 'skip',
       );
       sync(guildId, snapshot);
+      if (!snapshot.current && !snapshot.upcoming.length && finished)
+        emit({
+          type: 'queueExhausted',
+          guildId,
+          generation: snapshot.generation,
+          seed: finished.track,
+          userId: finished.enqueuedBy,
+          cause,
+        });
     });
   }
 
@@ -381,6 +394,28 @@ export function createKairoMusicEngine(
       });
     },
     enqueueMany,
+    enqueueAutoplay(request) {
+      return lock(request.guildId).runExclusive(async () => {
+        const queue = queues.snapshot(request.guildId);
+        if (
+          queue.generation !== request.expectedGeneration ||
+          queue.current ||
+          queue.upcoming.length ||
+          !sessions.get(request.guildId) ||
+          sessions.get(request.guildId)!.snapshot().state === 'DISCONNECTED'
+        )
+          return false;
+        const snapshot = await queues.enqueueMany(
+          request.guildId,
+          [request.track],
+          request.enqueuedBy,
+          'last',
+          'autoplay',
+        );
+        sync(request.guildId, snapshot);
+        return true;
+      });
+    },
     getQueue(guildId) {
       return queues.snapshot(guildId);
     },
@@ -389,9 +424,19 @@ export function createKairoMusicEngine(
       return lock(guildId).runExclusive(async () => {
         if (queues.snapshot(guildId).generation !== observed)
           return queues.snapshot(guildId);
+        const finished = queues.snapshot(guildId).current;
         sessions.get(guildId)?.stop('skipped');
         const snapshot = await queues.advance(guildId, observed, 'skip');
         sync(guildId, snapshot);
+        if (!snapshot.current && !snapshot.upcoming.length && finished)
+          emit({
+            type: 'queueExhausted',
+            guildId,
+            generation: snapshot.generation,
+            seed: finished.track,
+            userId: finished.enqueuedBy,
+            cause: 'skip',
+          });
         return snapshot;
       });
     },

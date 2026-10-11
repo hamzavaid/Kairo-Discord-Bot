@@ -142,6 +142,7 @@ export class MusicService {
     guildId: string,
     userId: string,
     count: number,
+    signal?: AbortSignal,
   ): Promise<Track[]> {
     if (!Number.isInteger(count) || count < 1 || count > 25)
       throw new MusicError('INVALID_QUERY', 'Choose 1 to 25 search results.');
@@ -151,6 +152,7 @@ export class MusicService {
       userId,
       undefined,
       count,
+      signal,
     );
     const tracks =
       result.kind === 'track'
@@ -202,6 +204,7 @@ export class MusicService {
     userId: string;
     voiceTarget: VoiceTarget;
     tracks: Track[];
+    position?: 'next' | 'last';
   }): Promise<{ queued: number }> {
     if (!input.tracks.length)
       throw new MusicError('COLLECTION_EMPTY', 'The collection is empty.');

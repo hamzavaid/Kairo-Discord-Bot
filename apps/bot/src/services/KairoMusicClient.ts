@@ -17,6 +17,7 @@ export class KairoMusicClient {
     requestedBy: string,
     allowCollections?: boolean,
     maxResults?: number,
+    signal?: AbortSignal,
   ): Promise<ParseResult> {
     return this.engine.parse({
       input,
@@ -24,6 +25,7 @@ export class KairoMusicClient {
       requestedBy,
       ...(allowCollections === undefined ? {} : { allowCollections }),
       ...(maxResults === undefined ? {} : { maxResults }),
+      ...(signal ? { signal } : {}),
     });
   }
   enqueueMany(

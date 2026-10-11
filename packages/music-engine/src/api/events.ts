@@ -9,6 +9,14 @@ interface ParseEventContext {
 }
 
 export type KairoMusicEvent =
+  | {
+      type: 'queueExhausted';
+      guildId: string;
+      generation: number;
+      seed: import('../domain/Track.js').Track;
+      userId: string;
+      cause: 'track-ended' | 'stream-failed' | 'skip';
+    }
   | ({ type: 'playbackAttempt' } & import('./history.js').PlaybackAttempt)
   | (ParseEventContext & {
       type: 'parseSucceeded';

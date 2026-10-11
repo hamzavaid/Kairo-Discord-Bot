@@ -25,7 +25,7 @@ export function libraryPage<T>(
     total: items.length,
   };
 }
-function restore(track: SavedTrack, userId: string): Track {
+export function restoreTrack(track: SavedTrack, userId: string): Track {
   return {
     id: trackIdentity(track),
     title: track.title,
@@ -93,7 +93,7 @@ export class LibraryService {
   unlikeSaved(owner: string, track: SavedTrack) {
     return this.repository.unlike(owner, trackIdentity(saveTrack(track)));
   }
-  addSaved(owner: string, name: string, track: SavedTrack) {
+  addSaved(owner: string, name: string, track: SavedTrack | Track) {
     return this.repository.append(owner, name, [saveTrack(track)]);
   }
   async saveCollection(
@@ -186,7 +186,7 @@ export class LibraryService {
       guildId: target.guildId,
       userId: owner,
       voiceTarget: target,
-      tracks: collection.entries.map((e) => restore(e.track, owner)),
+      tracks: collection.entries.map((e) => restoreTrack(e.track, owner)),
     });
   }
   async play(owner: string, name: string, target: VoiceTarget) {
