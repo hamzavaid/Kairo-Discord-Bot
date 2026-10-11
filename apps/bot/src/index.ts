@@ -197,7 +197,11 @@ client.once(Events.ClientReady, async () => {
 });
 
 client.on(Events.InteractionCreate, (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
+  if (
+    !interaction.isChatInputCommand() &&
+    !interaction.isMessageContextMenuCommand()
+  )
+    return;
 
   void commandHandler.execute(interaction).catch((error: unknown) => {
     logger.error(

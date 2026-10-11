@@ -57,3 +57,15 @@ export interface SlashCommand {
     context: CommandExecutionContext,
   ): Promise<void>;
 }
+
+export interface MessageCommand {
+  data: import('discord.js').ContextMenuCommandBuilder;
+  category: CommandCategory;
+  usage: string;
+  admission: 'play' | 'playnext' | 'info';
+  developerOnly?: boolean;
+  execute(
+    interaction: import('discord.js').MessageContextMenuCommandInteraction,
+    context: CommandExecutionContext,
+  ): Promise<void>;
+}

@@ -44,7 +44,7 @@ async function main(): Promise<void> {
     const rest = new REST({ version: '10', timeout: 15_000 }).setToken(token);
     const count = await deployGlobalCommands(rest, clientId);
     console.log(
-      `Registered ${count} global slash commands for application ${clientId}.`,
+      `Registered ${count} global application commands for application ${clientId}.`,
     );
   } catch (error) {
     console.error(

@@ -1,3 +1,8 @@
+import PlaySongCommand from './context/PlaySong.js';
+import SearchMusicCommand from './context/SearchMusic.js';
+import AddQueueCommand from './context/AddQueue.js';
+import PlayNextCommand from './context/PlayNext.js';
+import SongInfoCommand from './context/SongInfo.js';
 import voteCommand from './music/vote.js';
 import lyricsCommand from './utility/lyrics.js';
 import autoplayCommand from './music/autoplay.js';
@@ -12,6 +17,8 @@ import {
   MessageFlags,
   Routes,
   type ChatInputCommandInteraction,
+  type MessageContextMenuCommandInteraction,
+  type RESTPostAPIContextMenuApplicationCommandsJSONBody,
   type RESTPostAPIChatInputApplicationCommandsJSONBody,
 } from 'discord.js';
 import { CommandError } from '../errors.js';
@@ -33,6 +40,7 @@ import type {
   CommandExecutionContext,
   CommandServices,
   SlashCommand,
+  MessageCommand,
 } from './types.js';
 import type { PlaybackAction } from '../services/PlaybackPolicyService.js';
 import helpCommand from './utility/help.js';
@@ -64,7 +72,7 @@ export interface CommandRegistrationTransport {
   put(
     route: string,
     options: {
-      body: RESTPostAPIChatInputApplicationCommandsJSONBody[];
+      body: ApplicationCommandDefinition[];
     },
   ): Promise<unknown>;
 }
@@ -121,7 +129,7 @@ function isInteractionResponseError(error: unknown): boolean {
 }
 
 async function sendFailure(
-  interaction: ChatInputCommandInteraction,
+  interaction: ExecutableInteraction,
   message: string,
 ): Promise<void> {
   if (interaction.deferred) {
@@ -176,10 +184,30 @@ const builtInCommands: readonly SlashCommand[] = [
   voteCommand,
 ];
 
+const builtInMessageCommands: readonly MessageCommand[] = [
+  PlaySongCommand,
+  SearchMusicCommand,
+  AddQueueCommand,
+  PlayNextCommand,
+  SongInfoCommand,
+];
+export type ApplicationCommandDefinition =
+  | RESTPostAPIChatInputApplicationCommandsJSONBody
+  | RESTPostAPIContextMenuApplicationCommandsJSONBody;
+type ExecutableInteraction =
+  ChatInputCommandInteraction | MessageContextMenuCommandInteraction;
+function isMessageInteraction(
+  i: ExecutableInteraction,
+): i is MessageContextMenuCommandInteraction {
+  return i.isMessageContextMenuCommand?.() === true;
+}
 /** Build deployment payloads without constructing runtime services. */
 export function commandRegistrationData(
   commands: readonly SlashCommand[] = builtInCommands,
-): RESTPostAPIChatInputApplicationCommandsJSONBody[] {
+  messageCommands: readonly MessageCommand[] = commands === builtInCommands
+    ? builtInMessageCommands
+    : [],
+): ApplicationCommandDefinition[] {
   const names = new Set<string>();
   for (const command of commands) {
     for (const name of [command.data.name, ...(command.nicknames ?? [])]) {
@@ -189,7 +217,7 @@ export function commandRegistrationData(
       names.add(name);
     }
   }
-  return commands.flatMap((command) => {
+  const slashData = commands.flatMap((command) => {
     const data = command.data.toJSON();
     return [
       data,
@@ -201,13 +229,32 @@ export function commandRegistrationData(
       }),
     ];
   });
+  const messageNames = new Set<string>();
+  for (const command of messageCommands) {
+    if (
+      !command.data.name.trim() ||
+      command.data.name.length > 32 ||
+      messageNames.has(command.data.name)
+    )
+      throw new Error(
+        `Duplicate or invalid message command: ${command.data.name}`,
+      );
+    messageNames.add(command.data.name);
+  }
+  return [
+    ...slashData,
+    ...messageCommands.map((command) => command.data.toJSON()),
+  ];
 }
 
 export class SlashCommandHandler {
+  readonly messageCommands = new Collection<string, MessageCommand>();
   readonly commands = new Collection<string, SlashCommand>();
   private readonly nicknames = new Map<string, SlashCommand>();
 
   constructor(private readonly options: SlashCommandHandlerOptions) {
+    for (const command of builtInMessageCommands)
+      this.messageCommands.set(command.data.name, command);
     for (const command of builtInCommands) {
       if (this.commands.has(command.data.name))
         throw new Error(`Duplicate command: ${command.data.name}`);
@@ -233,14 +280,19 @@ export class SlashCommandHandler {
   }
 
   names(): string[] {
-    return this.list().flatMap((command) => [
-      command.data.name,
-      ...(command.nicknames ?? []),
-    ]);
+    return [
+      ...this.list().flatMap((command) => [
+        command.data.name,
+        ...(command.nicknames ?? []),
+      ]),
+      ...this.messageCommands.keys(),
+    ];
   }
 
-  registrationData(): RESTPostAPIChatInputApplicationCommandsJSONBody[] {
-    return commandRegistrationData(this.list());
+  registrationData(): ApplicationCommandDefinition[] {
+    return commandRegistrationData(this.list(), [
+      ...this.messageCommands.values(),
+    ]);
   }
 
   async register(
@@ -254,12 +306,14 @@ export class SlashCommandHandler {
     await transport.put(route, { body: this.registrationData() });
   }
 
-  async execute(interaction: ChatInputCommandInteraction): Promise<void> {
+  async execute(interaction: ExecutableInteraction): Promise<void> {
     const started = Date.now();
     const commandName = interaction.commandName;
     const userId = interaction.user.id;
     const guildId = interaction.guildId ?? undefined;
-    const command = this.get(commandName);
+    const command = isMessageInteraction(interaction)
+      ? this.messageCommands.get(commandName)
+      : this.get(commandName);
 
     let success = false;
     let errorCode: string | undefined;
@@ -281,7 +335,9 @@ export class SlashCommandHandler {
         this.options.policy.admit(
           guildId,
           userId,
-          command.data.name,
+          isMessageInteraction(interaction)
+            ? this.messageCommands.get(commandName)!.admission
+            : command.data.name,
           interaction.channelId,
           controls,
         );
@@ -295,16 +351,18 @@ export class SlashCommandHandler {
           'shuffle',
         ];
         const mutateSetting =
-          (name === 'volume' &&
+          !isMessageInteraction(interaction) &&
+          ((name === 'volume' &&
             interaction.options.getInteger('amount') !== null) ||
-          (name === 'repeat' &&
-            interaction.options.getString('mode') !== null) ||
-          (name === 'filter' &&
-            interaction.options.getString('preset') !== 'status') ||
-          (name === 'autoplay' &&
-            ['on', 'off'].includes(
-              interaction.options.getString('mode') ?? 'status',
-            ));
+            (name === 'repeat' &&
+              interaction.options.getString('mode') !== null) ||
+            (name === 'filter' &&
+              interaction.options.getString('preset') !== 'status') ||
+            (name === 'autoplay' &&
+              ['on', 'off'].includes(
+                interaction.options.getString('mode') ?? 'status',
+              )));
+
         if (
           (transports.includes(name) && !this.options.controls) ||
           mutateSetting
@@ -365,7 +423,11 @@ export class SlashCommandHandler {
         },
       };
 
-      await command.execute(interaction, context);
+      if (isMessageInteraction(interaction))
+        await this.messageCommands
+          .get(commandName)!
+          .execute(interaction, context);
+      else await this.get(commandName)!.execute(interaction, context);
       success = true;
     } catch (error) {
       if (isInteractionResponseError(error)) {
