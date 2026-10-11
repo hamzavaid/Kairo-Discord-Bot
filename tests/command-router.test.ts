@@ -223,8 +223,11 @@ describe('slash command handler and audits', () => {
       'volume',
       'repeat',
       'filter',
+      'history',
+      'stats',
+      'top',
     ]);
-    expect(handler.registrationData()).toHaveLength(30);
+    expect(handler.registrationData()).toHaveLength(33);
 
     const result = await run('help');
     const payload = lastPayload(result.reply) as {

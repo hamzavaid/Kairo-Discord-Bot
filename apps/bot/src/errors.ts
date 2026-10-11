@@ -11,7 +11,8 @@ export class CommandError extends Error {
       | 'VOTE_REQUIRED'
       | 'COMMAND_COOLDOWN'
       | 'CHANNEL_BLOCKED'
-      | 'INVALID_SETTING',
+      | 'INVALID_SETTING'
+      | 'HISTORY_EMPTY',
     message: string,
   ) {
     super(message);

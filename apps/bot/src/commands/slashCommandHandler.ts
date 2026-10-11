@@ -1,3 +1,6 @@
+import historyCommand from './utility/history.js';
+import statsCommand from './utility/stats.js';
+import topCommand from './utility/top.js';
 import { MusicError } from '@kairo/music-engine';
 import { normalizeGuildControls, LibraryError } from '@kairo/data';
 import {
@@ -155,6 +158,9 @@ const builtInCommands: readonly SlashCommand[] = [
   volumeCommand,
   repeatCommand,
   filterCommand,
+  historyCommand,
+  statsCommand,
+  topCommand,
 ];
 
 /** Build deployment payloads without constructing runtime services. */
@@ -289,6 +295,10 @@ export class SlashCommandHandler {
       }
       const context: CommandExecutionContext = {
         music: this.options.music,
+        ...(this.options.history ? { history: this.options.history } : {}),
+        ...(this.options.statistics
+          ? { statistics: this.options.statistics }
+          : {}),
         ...(this.options.policy ? { policy: this.options.policy } : {}),
         audit: this.options.audit,
         settings: this.options.settings,

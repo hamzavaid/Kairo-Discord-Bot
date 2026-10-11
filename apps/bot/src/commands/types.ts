@@ -1,3 +1,5 @@
+import type { HistoryService } from '../services/HistoryService.js';
+import type { StatisticsService } from '../services/StatisticsService.js';
 import type { PlaybackPolicyService } from '../services/PlaybackPolicyService.js';
 import type { GuildSettingsRepository } from '@kairo/data';
 import type {
@@ -16,6 +18,8 @@ export interface CommandServices {
   settings: GuildSettingsRepository;
   library?: LibraryService;
   policy?: PlaybackPolicyService;
+  history?: HistoryService;
+  statistics?: StatisticsService;
   onSettingsChanged?: (guildId: string) => Promise<void>;
   onVoiceActivity?: (guildId: string) => Promise<void>;
 }

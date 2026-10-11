@@ -1,3 +1,4 @@
+import { StatisticsService } from './services/StatisticsService.js';
 import { existsSync } from 'node:fs';
 import { Client, Events, GatewayIntentBits, REST } from 'discord.js';
 import { normalizeGuildControls, connectGuildSettings } from '@kairo/data';
@@ -94,6 +95,8 @@ const refreshIdle = async (guildId: string): Promise<void> => {
 
 const commandHandler = createSlashCommandHandler({
   music,
+  history,
+  statistics: new StatisticsService(database.history, database.library),
   policy: new PlaybackPolicyService(),
   library: new LibraryService(database.library, music),
   audit,
