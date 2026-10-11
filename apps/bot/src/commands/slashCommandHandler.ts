@@ -1,3 +1,4 @@
+import lyricsCommand from './utility/lyrics.js';
 import autoplayCommand from './music/autoplay.js';
 import recommendCommand from './utility/recommend.js';
 import historyCommand from './utility/history.js';
@@ -165,6 +166,7 @@ const builtInCommands: readonly SlashCommand[] = [
   topCommand,
   autoplayCommand,
   recommendCommand,
+  lyricsCommand,
 ];
 
 /** Build deployment payloads without constructing runtime services. */
@@ -299,6 +301,7 @@ export class SlashCommandHandler {
       }
       const context: CommandExecutionContext = {
         music: this.options.music,
+        ...(this.options.lyrics ? { lyrics: this.options.lyrics } : {}),
         ...(this.options.recommendations
           ? { recommendations: this.options.recommendations }
           : {}),

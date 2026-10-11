@@ -1,3 +1,4 @@
+import { LyricsService } from './services/LyricsService.js';
 import { RecommendationService } from './services/RecommendationService.js';
 import { AutoplayService } from './services/AutoplayService.js';
 import { StatisticsService } from './services/StatisticsService.js';
@@ -121,6 +122,7 @@ const commandHandler = createSlashCommandHandler({
   policy: new PlaybackPolicyService(),
   library,
   recommendations,
+  lyrics: new LyricsService(),
   audit,
   settings: database.repository,
   developerIds,

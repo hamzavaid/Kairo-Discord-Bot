@@ -13,7 +13,9 @@ export class CommandError extends Error {
       | 'CHANNEL_BLOCKED'
       | 'INVALID_SETTING'
       | 'HISTORY_EMPTY'
-      | 'RECOMMENDATION_UNAVAILABLE',
+      | 'RECOMMENDATION_UNAVAILABLE'
+      | 'LYRICS_PROVIDER_UNAVAILABLE'
+      | 'LYRICS_NOT_FOUND',
     message: string,
     options?: ErrorOptions,
   ) {

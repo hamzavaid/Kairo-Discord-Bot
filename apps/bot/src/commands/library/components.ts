@@ -52,8 +52,9 @@ export async function pages(
   title: string,
   lines: string[],
   initial = 1,
+  size = 10,
 ) {
-  let current = libraryPage(lines, initial);
+  let current = libraryPage(lines, initial, size);
   let active = true;
   const id = `kairo:library:page:${interaction.id}`;
   const render = (expired = false): MessageEditOptions => ({
@@ -96,7 +97,7 @@ export async function pages(
           current.pages,
           Math.max(1, current.page + (i.customId === `${id}:0` ? -1 : 1)),
         );
-        current = libraryPage(lines, next);
+        current = libraryPage(lines, next, size);
         await i.update(render());
       })
       .catch((error) => report(error, i as ButtonInteraction, context));

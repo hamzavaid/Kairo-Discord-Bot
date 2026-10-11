@@ -1,3 +1,4 @@
+import type { LyricsService } from '../services/LyricsService.js';
 import type { RecommendationService } from '../services/RecommendationService.js';
 import type { HistoryService } from '../services/HistoryService.js';
 import type { StatisticsService } from '../services/StatisticsService.js';
@@ -21,6 +22,7 @@ export interface CommandServices {
   policy?: PlaybackPolicyService;
   history?: HistoryService;
   recommendations?: RecommendationService;
+  lyrics?: LyricsService;
   statistics?: StatisticsService;
   onSettingsChanged?: (guildId: string) => Promise<void>;
   onVoiceActivity?: (guildId: string) => Promise<void>;
