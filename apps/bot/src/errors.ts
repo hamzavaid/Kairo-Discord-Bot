@@ -6,7 +6,12 @@ export class CommandError extends Error {
       | 'UNAUTHORIZED'
       | 'GUILD_ONLY'
       | 'MISSING_QUERY'
-      | 'STALE_PLAYER',
+      | 'STALE_PLAYER'
+      | 'DJ_PERMISSION_REQUIRED'
+      | 'VOTE_REQUIRED'
+      | 'COMMAND_COOLDOWN'
+      | 'CHANNEL_BLOCKED'
+      | 'INVALID_SETTING',
     message: string,
   ) {
     super(message);

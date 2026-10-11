@@ -1,3 +1,4 @@
+import type { PlaybackPolicyService } from '../services/PlaybackPolicyService.js';
 import type { GuildSettingsRepository } from '@kairo/data';
 import type {
   ChatInputCommandInteraction,
@@ -14,6 +15,7 @@ export interface CommandServices {
   audit: AuditLog;
   settings: GuildSettingsRepository;
   library?: LibraryService;
+  policy?: PlaybackPolicyService;
   onSettingsChanged?: (guildId: string) => Promise<void>;
   onVoiceActivity?: (guildId: string) => Promise<void>;
 }

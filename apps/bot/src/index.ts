@@ -13,6 +13,7 @@ import {
 import { KairoMusicClient } from './services/KairoMusicClient.js';
 import { logPlaybackEvents } from './services/logPlaybackEvents.js';
 import { LibraryService } from './services/LibraryService.js';
+import { PlaybackPolicyService } from './services/PlaybackPolicyService.js';
 import { MusicService } from './services/MusicService.js';
 import { VoiceIdleManager } from './voice/VoiceIdleManager.js';
 
@@ -80,6 +81,7 @@ const refreshIdle = async (guildId: string): Promise<void> => {
 
 const commandHandler = createSlashCommandHandler({
   music,
+  policy: new PlaybackPolicyService(),
   library: new LibraryService(database.library, music),
   audit,
   settings: database.repository,

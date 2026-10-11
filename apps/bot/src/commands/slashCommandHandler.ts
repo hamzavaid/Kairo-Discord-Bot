@@ -1,5 +1,5 @@
 import { MusicError } from '@kairo/music-engine';
-import { LibraryError } from '@kairo/data';
+import { normalizeGuildControls, LibraryError } from '@kairo/data';
 import {
   Collection,
   MessageFlags,
@@ -24,6 +24,7 @@ import type {
   CommandServices,
   SlashCommand,
 } from './types.js';
+import type { PlaybackAction } from '../services/PlaybackPolicyService.js';
 import helpCommand from './utility/help.js';
 import infoCommand from './utility/info.js';
 import pingCommand from './utility/ping.js';
@@ -248,8 +249,41 @@ export class SlashCommandHandler {
           'You are not authorized to use this command.',
         );
 
+      if (this.options.policy && guildId) {
+        const controls = normalizeGuildControls(
+          (await this.options.settings.get(guildId)).controls,
+        );
+        this.options.policy.admit(
+          guildId,
+          userId,
+          command.data.name,
+          interaction.channelId,
+          controls,
+        );
+        if (
+          [
+            'pause',
+            'resume',
+            'skip',
+            'stop',
+            'disconnect',
+            'shuffle',
+            'volume',
+            'filter',
+            'repeat',
+          ].includes(command.data.name)
+        )
+          await this.options.policy.authorize(
+            interaction,
+            this.options.music,
+            this.options.settings,
+            command.data.name as PlaybackAction,
+            this.options.music.queue(guildId).current?.enqueuedBy,
+          );
+      }
       const context: CommandExecutionContext = {
         music: this.options.music,
+        ...(this.options.policy ? { policy: this.options.policy } : {}),
         audit: this.options.audit,
         settings: this.options.settings,
         ...(this.options.library ? { library: this.options.library } : {}),
