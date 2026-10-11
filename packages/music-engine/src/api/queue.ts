@@ -7,6 +7,7 @@ export interface QueueEntry {
   track: Track;
   enqueuedBy: string;
   enqueuedAt: Date;
+  source?: 'manual' | 'autoplay';
 }
 
 export interface QueueSnapshot {

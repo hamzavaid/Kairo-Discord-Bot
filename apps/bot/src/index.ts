@@ -14,6 +14,7 @@ import { KairoMusicClient } from './services/KairoMusicClient.js';
 import { logPlaybackEvents } from './services/logPlaybackEvents.js';
 import { LibraryService } from './services/LibraryService.js';
 import { PlaybackPolicyService } from './services/PlaybackPolicyService.js';
+import { HistoryService } from './services/HistoryService.js';
 import { MusicService } from './services/MusicService.js';
 import { VoiceIdleManager } from './voice/VoiceIdleManager.js';
 
@@ -44,7 +45,13 @@ const engine = createKairoMusicEngine({
 logPlaybackEvents(engine, logger);
 
 const music = new MusicService(new KairoMusicClient(engine));
-const audit = new AuditLog();
+const history = new HistoryService(database.history, (error) =>
+  logger.error({ err: error }, 'History persistence failed'),
+);
+history.attach(engine);
+const audit = new AuditLog(500, database.audit, (error) =>
+  logger.error({ err: error }, 'Audit persistence failed'),
+);
 const developerIds = new Set(developerIdsFromEnvironment(environment));
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
@@ -168,6 +175,8 @@ async function close(): Promise<void> {
   closing = true;
   idle.shutdown();
   await engine.shutdown();
+  await history.close();
+  await audit.drain();
   client.destroy();
   await database.close();
 }

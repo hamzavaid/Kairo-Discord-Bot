@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import type { PlaybackAttempt, PlaybackOutcome } from '../api/history.js';
 import {
   createAudioPlayer,
   createAudioResource,
@@ -29,6 +31,7 @@ import {
 } from './PlaybackStateMachine.js';
 
 export interface PlaybackSessionOptions {
+  onAttempt?: (attempt: PlaybackAttempt) => void;
   prepareTrack?: (track: Track, signal: AbortSignal) => Promise<Track>;
   guildId: string;
   resolver: Pick<StreamResolver, 'resolve'>;
@@ -77,6 +80,9 @@ export class PlaybackSession {
   private prepared: PreparedAudio | undefined;
   private entry: QueueEntry | undefined;
   private generation = 0;
+  private attempt: PlaybackAttempt | undefined;
+  private listeningSince: number | undefined;
+  private listenedMs = 0;
   private volume = 100;
   private filter: FilterPreset = 'flat';
   private resource: AudioResource | undefined;
@@ -119,7 +125,7 @@ export class PlaybackSession {
           token === this.generation &&
           !this.suppressed.has(token)
         ) {
-          this.stop();
+          this.stop('completed');
           this.options.onEnded?.(token, 'track-ended');
         }
       }
@@ -133,7 +139,19 @@ export class PlaybackSession {
   }
 
   private transition(next: PlaybackState): void {
+    if (this.machine.state === 'PLAYING' && this.listeningSince !== undefined) {
+      this.listenedMs += Math.max(0, performance.now() - this.listeningSince);
+      this.listeningSince = undefined;
+    }
     this.machine.transition(next);
+    if (next === 'PLAYING') {
+      this.listeningSince = performance.now();
+      if (this.attempt && !this.attempt.startedAt) {
+        this.attempt.startedAt = new Date();
+        this.attempt.status = 'playing';
+        this.options.onAttempt?.(structuredClone(this.attempt));
+      }
+    }
     this.options.onStateChanged?.(next, this.generation);
   }
 
@@ -161,6 +179,18 @@ export class PlaybackSession {
     if (this.entry && this.generation === generation) return;
     if (this.machine.state !== 'IDLE') this.stop();
     this.entry = structuredClone(entry);
+    this.listenedMs = 0;
+    this.listeningSince = undefined;
+    this.attempt = {
+      attemptId: randomUUID(),
+      guildId: this.options.guildId,
+      userId: entry.enqueuedBy,
+      track: structuredClone(entry.track),
+      requestedAt: new Date(),
+      status: 'playing',
+      source: entry.source ?? 'manual',
+      listenedMs: 0,
+    };
     this.generation = generation;
     this.abort = new AbortController();
     this.suppressed.clear();
@@ -246,7 +276,7 @@ export class PlaybackSession {
       error instanceof MusicError ? error.code : 'STREAM_UNAVAILABLE';
     this.transition('ERROR');
     this.options.onFailure?.(code, generation);
-    this.stop();
+    this.stop('failed');
     this.options.onEnded?.(generation, 'stream-failed');
   }
 
@@ -286,10 +316,27 @@ export class PlaybackSession {
     return this.snapshot();
   }
 
-  stop(): PlaybackSnapshot {
+  stop(
+    outcome: Exclude<PlaybackOutcome, 'playing'> = 'stopped',
+  ): PlaybackSnapshot {
     if (this.machine.state === 'DISCONNECTED' || this.machine.state === 'IDLE')
       return this.snapshot();
     this.suppressed.add(this.generation);
+    if (this.attempt) {
+      const elapsed =
+        this.listenedMs +
+        (this.listeningSince === undefined
+          ? 0
+          : Math.max(0, performance.now() - this.listeningSince));
+      const observed = this.resource?.playbackDuration;
+      this.attempt.listenedMs = Math.max(0, Math.round(observed ?? elapsed));
+      if (!this.attempt.startedAt) this.attempt.listenedMs = 0;
+      this.attempt.status = outcome;
+      this.attempt.endedAt = new Date();
+      const finished = this.attempt;
+      this.attempt = undefined;
+      this.options.onAttempt?.(structuredClone(finished));
+    }
     this.clearBufferTimer();
     this.abort?.abort();
     this.abort = undefined;
@@ -305,7 +352,7 @@ export class PlaybackSession {
 
   disconnect(): PlaybackSnapshot {
     if (this.machine.state === 'DISCONNECTED') return this.snapshot();
-    this.stop();
+    this.stop('disconnected');
     this.subscription?.unsubscribe();
     this.subscription = undefined;
     this.connection = undefined;

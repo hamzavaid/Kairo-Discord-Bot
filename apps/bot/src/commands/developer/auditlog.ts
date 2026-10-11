@@ -13,7 +13,7 @@ const command: SlashCommand = {
   category: 'Developer',
   developerOnly: true,
   async execute(interaction, context) {
-    const records = context.audit.list(
+    const records = await context.audit.persistedList(
       interaction.options.getInteger('page') ?? 1,
       10,
     );

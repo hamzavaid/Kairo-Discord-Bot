@@ -2,3 +2,5 @@
 export {};
 export * from './GuildSettingsRepository.js';
 export * from './LibraryRepository.js';
+
+export * from './HistoryRepository.js';

@@ -1,4 +1,10 @@
 import {
+  MongoHistoryRepository,
+  MongoAuditRepository,
+  type HistoryRepository,
+  type AuditRepository,
+} from './HistoryRepository.js';
+import {
   MongoLibraryRepository,
   type LibraryRepository,
 } from './LibraryRepository.js';
@@ -297,6 +303,8 @@ export async function connectGuildSettings(
 ): Promise<{
   repository: GuildSettingsRepository;
   library: LibraryRepository;
+  history: HistoryRepository;
+  audit: AuditRepository;
   close(): Promise<void>;
 }> {
   const connection = await mongoose
@@ -306,14 +314,22 @@ export async function connectGuildSettings(
     })
     .asPromise();
   const library = new MongoLibraryRepository(connection, options);
+  const history = new MongoHistoryRepository(connection);
+  const audit = new MongoAuditRepository(connection);
   try {
-    await library.initialize();
+    await Promise.all([
+      library.initialize(),
+      history.initialize(),
+      audit.initialize(),
+    ]);
   } catch (error) {
     await connection.close();
     throw error;
   }
   return {
     library,
+    history,
+    audit,
     repository: new MongoGuildSettingsRepository(connection),
     close: async () => {
       await connection.close();

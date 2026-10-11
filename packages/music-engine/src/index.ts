@@ -51,3 +51,5 @@ export type {
   FilterPreset,
   PlaybackControls,
 } from './playback/PlaybackControls.js';
+
+export type { PlaybackAttempt, PlaybackOutcome } from './api/history.js';

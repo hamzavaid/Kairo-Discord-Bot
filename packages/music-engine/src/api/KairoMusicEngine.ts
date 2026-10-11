@@ -262,6 +262,7 @@ export function createKairoMusicEngine(
     if (!current) {
       current = new PlaybackSession({
         guildId,
+        onAttempt: (attempt) => emit({ type: 'playbackAttempt', ...attempt }),
         resolver,
         prepareTrack: (track, signal) => playable.prepare(track, signal),
         ...(options.playbackRuntime?.createAudioPlayer
@@ -388,7 +389,7 @@ export function createKairoMusicEngine(
       return lock(guildId).runExclusive(async () => {
         if (queues.snapshot(guildId).generation !== observed)
           return queues.snapshot(guildId);
-        sessions.get(guildId)?.stop();
+        sessions.get(guildId)?.stop('skipped');
         const snapshot = await queues.advance(guildId, observed, 'skip');
         sync(guildId, snapshot);
         return snapshot;
@@ -422,7 +423,7 @@ export function createKairoMusicEngine(
             'QUEUE_EMPTY',
             'No previous track is available.',
           );
-        sessions.get(guildId)?.stop();
+        sessions.get(guildId)?.stop('skipped');
         const snapshot = await queues.previous(guildId);
         sync(guildId, snapshot);
         return snapshot;

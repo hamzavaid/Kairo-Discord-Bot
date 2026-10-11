@@ -9,6 +9,7 @@ interface ParseEventContext {
 }
 
 export type KairoMusicEvent =
+  | ({ type: 'playbackAttempt' } & import('./history.js').PlaybackAttempt)
   | (ParseEventContext & {
       type: 'parseSucceeded';
       resultKind: 'track' | 'search' | 'collection';
