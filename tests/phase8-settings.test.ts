@@ -1,3 +1,5 @@
+import settings from '../apps/bot/src/commands/utility/settings.js';
+import { vi } from 'vitest';
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_GUILD_CONTROLS,
@@ -82,4 +84,30 @@ describe('Phase 8 persistent guild controls', () => {
       normalizeGuildControls((await second.get('a')).controls).volume,
     ).toBe(30);
   });
+});
+
+it('validates all setting options before any Mongo write', async () => {
+  const repo = {
+    setIdleDisconnectSeconds: vi.fn(),
+    setAudioQuality: vi.fn(),
+    setControls: vi.fn(),
+    get: vi.fn(async () => ({})),
+  };
+  await expect(
+    settings.execute(
+      {
+        guildId: 'g',
+        memberPermissions: { has: () => true },
+        options: {
+          getInteger: (key: string) => (key === 'timeout_seconds' ? 30 : null),
+          getString: (key: string) =>
+            key === 'allowed_channels' ? 'bad-id' : null,
+        },
+        reply: vi.fn(),
+      } as never,
+      { settings: repo } as never,
+    ),
+  ).rejects.toMatchObject({ code: 'INVALID_SETTING' });
+  expect(repo.setIdleDisconnectSeconds).not.toHaveBeenCalled();
+  expect(repo.setControls).not.toHaveBeenCalled();
 });

@@ -19,7 +19,8 @@ const command: SlashCommand = {
     const id = guild(i);
     if (amount !== null) {
       controlVoice(i, c.music);
-      await c.music.setVolume(id, amount);
+      if (c.controls) await c.controls.perform('volume', i, undefined, amount);
+      else await c.music.setVolume(id, amount);
     }
     await i.reply({
       content: `Volume: ${amount ?? c.music.playback(id).volume ?? 100}%. Use /settings default_volume to change future sessions.`,

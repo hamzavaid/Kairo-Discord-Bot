@@ -3,6 +3,7 @@ import {
   type GuildSettingsRepository,
 } from '@kairo/data';
 import type { KairoMusicEngine, Track } from '@kairo/music-engine';
+import { CommandError } from '../errors.js';
 import type { RecommendationService } from './RecommendationService.js';
 export class AutoplayService {
   private readonly jobs = new Map<
@@ -97,6 +98,11 @@ export class AutoplayService {
         abort.signal.aborted
       )
         return;
+      if (!tracks[0])
+        throw new CommandError(
+          'RECOMMENDATION_UNAVAILABLE',
+          'No fresh radio recommendation was found.',
+        );
       await this.engine.enqueueAutoplay({
         guildId,
         track: tracks[0]!,

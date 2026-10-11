@@ -1,3 +1,9 @@
+import { MusicService } from '../apps/bot/src/services/MusicService.js';
+import { KairoMusicClient } from '../apps/bot/src/services/KairoMusicClient.js';
+import { PlaybackPolicyService } from '../apps/bot/src/services/PlaybackPolicyService.js';
+import { PlaybackControlService } from '../apps/bot/src/services/PlaybackControlService.js';
+import { createSlashCommandHandler } from '../apps/bot/src/commands/slashCommandHandler.js';
+import { AuditLog } from '../apps/bot/src/commands/AuditLog.js';
 import { describe, expect, it, vi } from 'vitest';
 import { createKairoMusicEngine, type Track } from '@kairo/music-engine';
 import {
@@ -252,6 +258,232 @@ it('queues play-next without restarting current audio, then plays it before the 
     expect(
       engine.getQueue(guildId).upcoming.map((e) => e.track.sourceId),
     ).toEqual(['b']);
+  } finally {
+    await engine.shutdown();
+  }
+});
+
+it('loads persisted defaults once per connection and reloads them after disconnect', async () => {
+  let volume = 42;
+  const defaults = vi.fn(async () => ({
+    volume,
+    filter: 'flat' as const,
+    repeat: 'queue' as const,
+  }));
+  const engine = createKairoMusicEngine({
+    playbackRuntime,
+    playbackDefaultsForGuild: defaults,
+  });
+  try {
+    await engine.connectVoice(target);
+    expect(engine.getPlayback(guildId)).toMatchObject({
+      volume: 42,
+      filter: 'flat',
+    });
+    expect(engine.getQueue(guildId).repeatMode).toBe('queue');
+    await engine.setVolume(guildId, 20);
+    await engine.connectVoice(target);
+    expect(defaults).toHaveBeenCalledOnce();
+    expect(engine.getPlayback(guildId).volume).toBe(20);
+    await engine.disconnectVoice(guildId);
+    volume = 60;
+    await engine.connectVoice(target);
+    expect(defaults).toHaveBeenCalledTimes(2);
+    expect(engine.getPlayback(guildId).volume).toBe(60);
+  } finally {
+    await engine.shutdown();
+  }
+});
+
+it('does not leave a voice connection when persisted default lookup fails', async () => {
+  const before = mocks.connections.length;
+  const engine = createKairoMusicEngine({
+    playbackRuntime,
+    playbackDefaultsForGuild: async () => {
+      throw Error('database unavailable');
+    },
+  });
+  try {
+    await expect(engine.connectVoice(target)).rejects.toThrow();
+    expect(mocks.connections.length).toBe(before);
+    expect(engine.getPlayback(guildId).state).toBe('DISCONNECTED');
+  } finally {
+    await engine.shutdown();
+  }
+});
+
+it('rejects stale disconnect controls without stopping the newer song', async () => {
+  const engine = createKairoMusicEngine({
+    fixtureAudio: { a: { packets }, b: { packets } },
+    playbackRuntime,
+  });
+  try {
+    await engine.connectVoice(target);
+    await engine.enqueueMany({
+      guildId,
+      tracks: [track('a'), track('b')],
+      enqueuedBy: 'user',
+    });
+    await vi.waitFor(() =>
+      expect(engine.getPlayback(guildId).state).toBe('PLAYING'),
+    );
+    const generation = engine.getQueue(guildId).generation;
+    await engine.skip(guildId, generation);
+    await vi.waitFor(() =>
+      expect(engine.getPlayback(guildId).state).toBe('PLAYING'),
+    );
+    const disconnect = engine.disconnectVoice as (
+      id: string,
+      generation?: number,
+    ) => Promise<unknown>;
+    await expect(disconnect(guildId, generation)).rejects.toMatchObject({
+      code: 'STALE_PLAYBACK',
+    });
+    expect(engine.getQueue(guildId).current?.track.sourceId).toBe('b');
+    expect(engine.getPlayback(guildId).state).toBe('PLAYING');
+  } finally {
+    await engine.shutdown();
+  }
+});
+
+it('admits radio exactly once through the connected queue and gives manual arrivals priority', async () => {
+  const engine = createKairoMusicEngine({
+    fixtureAudio: { a: { packets }, b: { packets } },
+    playbackRuntime,
+  });
+  try {
+    await engine.connectVoice(target);
+    const request = {
+      guildId,
+      track: track('a'),
+      enqueuedBy: 'user',
+      expectedGeneration: engine.getQueue(guildId).generation,
+    };
+    expect(
+      await Promise.all([
+        engine.enqueueAutoplay(request),
+        engine.enqueueAutoplay(request),
+      ]),
+    ).toEqual([true, false]);
+    expect(engine.getQueue(guildId).current?.source).toBe('autoplay');
+    await engine.stop(guildId);
+    const generation = engine.getQueue(guildId).generation;
+    await engine.enqueue({ guildId, track: track('b'), enqueuedBy: 'user' });
+    expect(
+      await engine.enqueueAutoplay({
+        ...request,
+        expectedGeneration: generation,
+      }),
+    ).toBe(false);
+    expect(engine.getQueue(guildId).current?.track.sourceId).toBe('b');
+  } finally {
+    await engine.shutdown();
+  }
+});
+
+it('executes advanced Discord controls through policy, services and the public engine, auditing denied developers safely', async () => {
+  const engine = createKairoMusicEngine({
+    fixtureAudio: { a: { packets }, b: { packets } },
+    playbackRuntime,
+  });
+  const music = new MusicService(new KairoMusicClient(engine));
+  const policy = new PlaybackPolicyService();
+  const settings = {
+    get: async () => ({
+      guildId,
+      idleDisconnectSeconds: 60,
+      audioQuality: 'high' as const,
+      controls: {
+        controlPolicy: 'dj' as const,
+        djRoleId: '123456789012345678',
+      },
+    }),
+    setIdleDisconnectSeconds: vi.fn(),
+    setAudioQuality: vi.fn(),
+  };
+  const audit = new AuditLog();
+  const controls = new PlaybackControlService(music, settings, policy);
+  const handler = createSlashCommandHandler({
+    music,
+    settings,
+    policy,
+    controls,
+    audit,
+    developerIds: new Set(['developer']),
+  });
+  const interaction = (
+    name: string,
+    userId: string,
+    roles: string[],
+    voice = 'voice-channel',
+  ) => ({
+    commandName: name,
+    guildId,
+    channelId: 'text',
+    user: { id: userId },
+    guild: {
+      members: {
+        cache: new Map([
+          [userId, { roles: { cache: new Map(roles.map((id) => [id, {}])) } }],
+        ]),
+      },
+      roles: { cache: new Map([['123456789012345678', {}]]) },
+      voiceStates: { cache: new Map([[userId, { channelId: voice }]]) },
+    },
+    memberPermissions: { has: () => false },
+    options: {
+      getInteger: (key: string) => (key === 'amount' ? 40 : null),
+      getString: () => null,
+    },
+    reply: vi.fn(),
+    deferred: false,
+    replied: false,
+  });
+  try {
+    await music.playTracks({
+      guildId,
+      userId: 'user',
+      voiceTarget: target,
+      tracks: [track('a'), track('b')],
+    });
+    await vi.waitFor(() =>
+      expect(engine.getPlayback(guildId).state).toBe('PLAYING'),
+    );
+    const denied = interaction('volume', 'developer', []);
+    await handler.execute(denied as never);
+    expect(engine.getPlayback(guildId).volume).toBe(100);
+    expect(denied.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining('DJ') }),
+    );
+    const dj = interaction('volume', 'dj', ['123456789012345678']);
+    await handler.execute(dj as never);
+    expect(engine.getPlayback(guildId).volume).toBe(40);
+    await handler.execute(
+      interaction('skip', 'dj', ['123456789012345678'], 'other-voice') as never,
+    );
+    expect(engine.getQueue(guildId).current?.track.sourceId).toBe('a');
+    await handler.execute(
+      interaction('skip', 'dj', ['123456789012345678']) as never,
+    );
+    expect(engine.getQueue(guildId).current?.track.sourceId).toBe('b');
+    expect(audit.list()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          userId: 'developer',
+          success: false,
+          errorCode: 'DJ_PERMISSION_REQUIRED',
+        }),
+        expect.objectContaining({
+          userId: 'dj',
+          success: true,
+          command: 'volume',
+        }),
+        expect.objectContaining({
+          success: false,
+          errorCode: 'WRONG_VOICE_CHANNEL',
+        }),
+      ]),
+    );
   } finally {
     await engine.shutdown();
   }

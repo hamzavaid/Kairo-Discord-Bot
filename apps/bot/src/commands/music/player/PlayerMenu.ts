@@ -161,10 +161,14 @@ export class PlayerMenu {
       if (!action) return;
       if (action.name === 'close') {
         if (i.user.id !== this.interaction.user.id) {
-          void i.reply({
-            content: 'Only the menu creator can close this player.',
-            flags: MessageFlags.Ephemeral,
-          });
+          void i
+            .reply({
+              content: 'Only the menu creator can close this player.',
+              flags: MessageFlags.Ephemeral,
+            })
+            .catch((error) =>
+              this.context.reportComponentError?.(error, i.user.id),
+            );
           return;
         }
         this.state.active = false;
@@ -333,7 +337,12 @@ export class PlayerMenu {
           'Advanced player controls are unavailable.',
         );
       if (action.name === 'autoplay') {
-        await this.context.policy?.authorize(
+        if (!this.context.policy)
+          throw new CommandError(
+            'DJ_PERMISSION_REQUIRED',
+            'Playback authorization is unavailable.',
+          );
+        await this.context.policy.authorize(
           i,
           this.context.music,
           this.context.settings,

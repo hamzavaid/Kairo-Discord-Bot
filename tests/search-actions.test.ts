@@ -53,3 +53,49 @@ it('search displays selected-track play/next/queue/save actions without playback
     ),
   );
 });
+
+it('rechecks the server channel policy before queueing an old search result', async () => {
+  const collector = new EventEmitter();
+  const playTracks = vi.fn();
+  const admit = vi.fn(() => {
+    throw Error('channel blocked');
+  });
+  await info.execute(
+    {
+      id: 'blocked',
+      guildId: 'g',
+      user: { id: 'u' },
+      options: { getInteger: () => 2, getString: () => 'song' },
+      deferReply: vi.fn(),
+      editReply: async () => ({
+        createMessageComponentCollector: () => collector,
+      }),
+    } as never,
+    {
+      music: {
+        infoResults: async () => [libraryTrack],
+        assertVoiceChannel: vi.fn(),
+        playTracks,
+      },
+      policy: { admit },
+      settings: { get: async () => ({ controls: {} }) },
+    } as never,
+  );
+  const followUp = vi.fn();
+  collector.emit('collect', {
+    customId: 'kairo:info:blocked:play:0',
+    guildId: 'g',
+    channelId: 'text',
+    user: { id: 'u' },
+    guild: {
+      voiceStates: { cache: new Map([['u', { channelId: 'v' }]]) },
+      voiceAdapterCreator: () => {},
+    },
+    isButton: () => true,
+    deferUpdate: vi.fn(),
+    followUp,
+  });
+  await vi.waitFor(() => expect(followUp).toHaveBeenCalled());
+  expect(admit).toHaveBeenCalled();
+  expect(playTracks).not.toHaveBeenCalled();
+});

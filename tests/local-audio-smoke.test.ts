@@ -25,27 +25,33 @@ const track: Track = {
 };
 
 describe('local audio pipeline smoke', () => {
-  it('plays configured Opus fixture packets with the real @discordjs/voice player', async () => {
-    const packets = Array.from({ length: 30 }, () =>
-      Uint8Array.from([0xf8, 0xff, 0xfe]),
-    );
-    const source = await new StreamResolver([
-      new FixtureStreamProvider({ silence: { packets } }),
-    ]).resolve(track, new AbortController().signal);
-    const prepared = new FFmpegPipeline().prepare(source);
-    expect(prepared.inputType).toBe('opus');
-    const player = createAudioPlayer({
-      behaviors: { noSubscriber: NoSubscriberBehavior.Play },
-    });
-    try {
-      player.play(
-        createAudioResource(prepared.input, { inputType: StreamType.Opus }),
+  it.each([false, true])(
+    'plays real Opus audio with inline volume %s',
+    async (inlineVolume) => {
+      const packets = Array.from({ length: 30 }, () =>
+        Uint8Array.from([0xf8, 0xff, 0xfe]),
       );
-      await entersState(player, AudioPlayerStatus.Playing, 2000);
-      expect(player.state.status).toBe(AudioPlayerStatus.Playing);
-    } finally {
-      player.stop(true);
-      prepared.dispose();
-    }
-  });
+      const source = await new StreamResolver([
+        new FixtureStreamProvider({ silence: { packets } }),
+      ]).resolve(track, new AbortController().signal);
+      const prepared = new FFmpegPipeline().prepare(source);
+      expect(prepared.inputType).toBe('opus');
+      const player = createAudioPlayer({
+        behaviors: { noSubscriber: NoSubscriberBehavior.Play },
+      });
+      try {
+        player.play(
+          createAudioResource(prepared.input, {
+            inputType: StreamType.Opus,
+            inlineVolume,
+          }),
+        );
+        await entersState(player, AudioPlayerStatus.Playing, 2000);
+        expect(player.state.status).toBe(AudioPlayerStatus.Playing);
+      } finally {
+        player.stop(true);
+        prepared.dispose();
+      }
+    },
+  );
 });

@@ -93,3 +93,29 @@ describe('guild playback authorization', () => {
     ).not.toThrow();
   });
 });
+
+it('rechecks current text-channel policy for component mutations', async () => {
+  const policy = new PlaybackPolicyService();
+  const interaction = {
+    guildId: 'g',
+    channelId: '123456789012345678',
+    user: { id: 'u' },
+    guild: {
+      members: { cache: new Map() },
+      roles: { cache: new Map() },
+      voiceStates: { cache: new Map([['u', { channelId: 'v' }]]) },
+    },
+  };
+  await expect(
+    policy.authorize(
+      interaction as never,
+      { voiceChannel: () => 'v' } as never,
+      {
+        get: async () => ({
+          controls: { blockedTextChannels: ['123456789012345678'] },
+        }),
+      },
+      'skip',
+    ),
+  ).rejects.toMatchObject({ code: 'CHANNEL_BLOCKED' });
+});

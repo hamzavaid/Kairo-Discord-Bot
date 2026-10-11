@@ -1,3 +1,4 @@
+import { normalizeGuildControls } from '@kairo/data';
 import {
   ActionRowBuilder,
   ButtonBuilder,
@@ -181,6 +182,16 @@ export async function showTrackResults(
         }
         if (action && !isLike) {
           try {
+            if (context.policy && i.guildId)
+              context.policy.admit(
+                i.guildId,
+                i.user.id,
+                'queue-add',
+                i.channelId,
+                normalizeGuildControls(
+                  (await context.settings.get(i.guildId)).controls,
+                ),
+              );
             const target = voiceTarget(i, context);
             const selected = tracks[selectedIndex]!;
             await context.music.playTracks({

@@ -69,6 +69,7 @@ describe('durable listening and audit repositories', () => {
       endedAt: new Date(),
       listenedMs: 1000,
     });
+    await first.record(entry); // Late duplicate start must not revert the terminal record.
     expect(db.records.size).toBe(1);
     const second = new MongoHistoryRepository(db.connection);
     expect((await second.list({ userId: 'u' }))[0]).toMatchObject({

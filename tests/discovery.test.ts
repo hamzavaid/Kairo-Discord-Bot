@@ -75,3 +75,54 @@ describe('provider-neutral discovery prototype', () => {
     collector.emit('end');
   });
 });
+
+it('serializes discovery edits so expiration cannot be overtaken by an in-flight refresh', async () => {
+  const collector = new EventEmitter();
+  let release!: () => void;
+  const blocked = new Promise<void>((r) => {
+    release = r;
+  });
+  const editReply = vi.fn(async () => ({
+    createMessageComponentCollector: () => collector,
+  }));
+  editReply.mockImplementationOnce(async () => ({
+    createMessageComponentCollector: () => collector,
+  }));
+  editReply.mockImplementationOnce(async () => {
+    await blocked;
+    return { createMessageComponentCollector: () => collector };
+  });
+  await discover.execute(
+    {
+      id: 'expiry',
+      guildId: 'g',
+      user: { id: 'u' },
+      options: { getString: () => null },
+      deferReply: vi.fn(),
+      editReply,
+    } as never,
+    {
+      discovery: {
+        load: async () => ({
+          title: 'Songs',
+          section: 'recommended',
+          tracks: [libraryTrack],
+        }),
+      },
+      music: {},
+    } as never,
+  );
+  collector.emit('collect', {
+    customId: 'kairo:discover:expiry:refresh',
+    user: { id: 'u' },
+    isStringSelectMenu: () => false,
+    update: vi.fn(),
+  });
+  await vi.waitFor(() => expect(editReply).toHaveBeenCalledTimes(2));
+  collector.emit('end');
+  await new Promise((r) => setImmediate(r));
+  expect(editReply).toHaveBeenCalledTimes(2);
+  release();
+  await vi.waitFor(() => expect(editReply).toHaveBeenCalledTimes(3));
+  expect(JSON.stringify(editReply.mock.calls.at(-1))).toContain('Menu expired');
+});

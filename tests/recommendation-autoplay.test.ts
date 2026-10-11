@@ -105,3 +105,53 @@ describe('canonical recommendations and radio', () => {
     await engine.shutdown();
   });
 });
+
+it.each(['disabled', 'failed', 'disconnected', 'empty'])(
+  'radio handles %s without unsafe enqueue or reconnect',
+  async (scenario) => {
+    const events = new Map<string, (e: never) => void>();
+    let finish!: (tracks: unknown[]) => void;
+    const pending = new Promise<unknown[]>((resolve) => {
+      finish = resolve;
+    });
+    const engine = {
+      on: (name: string, cb: (e: never) => void) => {
+        events.set(name, cb);
+        return () => events.delete(name);
+      },
+      getQueue: () => ({ generation: 1, current: undefined, upcoming: [] }),
+      getPlayback: () => ({
+        state: scenario === 'disconnected' ? 'DISCONNECTED' : 'IDLE',
+      }),
+      enqueueAutoplay: vi.fn(),
+    };
+    const report = vi.fn();
+    const service = new AutoplayService(
+      engine as never,
+      {
+        get: async () => ({ controls: { autoplay: scenario !== 'disabled' } }),
+      } as never,
+      {
+        recommend: () =>
+          scenario === 'failed'
+            ? Promise.reject(Error('provider unavailable'))
+            : pending,
+      } as never,
+      report,
+    );
+    service.attach();
+    events.get('queueExhausted')?.({
+      guildId: 'g',
+      generation: 1,
+      seed: track('seed'),
+      userId: 'u',
+    } as never);
+    await Promise.resolve();
+    finish(scenario === 'empty' ? [] : [track('new')]);
+    await service.drain();
+    expect(engine.enqueueAutoplay).not.toHaveBeenCalled();
+    if (scenario === 'failed' || scenario === 'empty')
+      expect(report).toHaveBeenCalledOnce();
+    await service.close();
+  },
+);

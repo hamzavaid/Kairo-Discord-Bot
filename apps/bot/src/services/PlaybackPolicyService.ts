@@ -122,7 +122,8 @@ export class PlaybackPolicyService {
     interaction: Pick<
       RepliableInteraction,
       'guildId' | 'guild' | 'user' | 'memberPermissions'
-    >,
+    > &
+      Partial<Pick<RepliableInteraction, 'channelId'>>,
     music: MusicService,
     settings: {
       get(id: string): Promise<{ controls?: Partial<GuildControls> }>;
@@ -133,30 +134,33 @@ export class PlaybackPolicyService {
     if (!interaction.guildId)
       throw new CommandError('GUILD_ONLY', 'Use this command in a server.');
     const member = interaction.guild?.members.cache.get(interaction.user.id);
-    this.assert(
-      action,
-      normalizeGuildControls(
-        (await settings.get(interaction.guildId)).controls,
-      ),
-      {
-        userId: interaction.user.id,
-        voiceChannelId:
-          interaction.guild?.voiceStates.cache.get(interaction.user.id)
-            ?.channelId ?? undefined,
-        botVoiceChannelId: music.voiceChannel(interaction.guildId),
-        administrator:
-          interaction.memberPermissions?.has(
-            PermissionFlagsBits.ManageGuild,
-          ) === true ||
-          interaction.memberPermissions?.has(
-            PermissionFlagsBits.Administrator,
-          ) === true,
-        roleIds: member ? [...member.roles.cache.keys()] : [],
-        availableRoleIds: interaction.guild
-          ? [...interaction.guild.roles.cache.keys()]
-          : [],
-        ...(requestedBy ? { requestedBy } : {}),
-      },
+    const controls = normalizeGuildControls(
+      (await settings.get(interaction.guildId)).controls,
     );
+    this.admit(
+      interaction.guildId,
+      interaction.user.id,
+      'control',
+      interaction.channelId ?? null,
+      controls,
+    );
+    this.assert(action, controls, {
+      userId: interaction.user.id,
+      voiceChannelId:
+        interaction.guild?.voiceStates.cache.get(interaction.user.id)
+          ?.channelId ?? undefined,
+      botVoiceChannelId: music.voiceChannel(interaction.guildId),
+      administrator:
+        interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild) ===
+          true ||
+        interaction.memberPermissions?.has(
+          PermissionFlagsBits.Administrator,
+        ) === true,
+      roleIds: member ? [...member.roles.cache.keys()] : [],
+      availableRoleIds: interaction.guild
+        ? [...interaction.guild.roles.cache.keys()]
+        : [],
+      ...(requestedBy ? { requestedBy } : {}),
+    });
   }
 }

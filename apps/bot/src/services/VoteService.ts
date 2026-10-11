@@ -70,7 +70,7 @@ export class VoteService {
     if (!request.eligible.includes(request.userId))
       throw new CommandError(
         'USER_NOT_IN_VOICE',
-        'Only listeners in Kairo voice voice channel can vote.',
+        'Only listeners in Kairo voice channel can vote.',
       );
     const ballot = this.ballot(request, true)!;
     if (ballot.votes.has(request.userId))

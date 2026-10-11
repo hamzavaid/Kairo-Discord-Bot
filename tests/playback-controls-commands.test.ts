@@ -53,3 +53,28 @@ describe('thin advanced control commands', () => {
     expect(music.setFilter).toHaveBeenCalledTimes(1);
   });
 });
+
+it('advanced slash mutations share the generation-safe authorized control service', async () => {
+  const perform = vi.fn(async () => 'Applied.');
+  const music = {
+    assertVoiceChannel: vi.fn(),
+    playback: () => ({ volume: 50 }),
+    queue: () => ({ repeatMode: 'off' }),
+    setVolume: vi.fn(),
+    setRepeat: vi.fn(),
+    setFilter: vi.fn(),
+  };
+  const context = { music, controls: { perform } };
+  const v = make({}, 50),
+    r = make({ mode: 'track' }),
+    f = make({ preset: 'reset' });
+  await volume.execute(v as never, context as never);
+  await repeat.execute(r as never, context as never);
+  await filter.execute(f as never, context as never);
+  expect(perform).toHaveBeenCalledWith('volume', v, undefined, 50);
+  expect(perform).toHaveBeenCalledWith('repeat', r, undefined, 'track');
+  expect(perform).toHaveBeenCalledWith('filter', f, undefined, 'flat');
+  expect(music.setVolume).not.toHaveBeenCalled();
+  expect(music.setRepeat).not.toHaveBeenCalled();
+  expect(music.setFilter).not.toHaveBeenCalled();
+});

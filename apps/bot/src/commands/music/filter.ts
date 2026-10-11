@@ -26,7 +26,9 @@ const command: SlashCommand = {
     const preset = selected === 'reset' ? 'flat' : selected;
     if (preset !== 'status') {
       controlVoice(i, c.music);
-      await c.music.setFilter(id, preset as (typeof FILTER_PRESETS)[number]);
+      if (c.controls) await c.controls.perform('filter', i, undefined, preset);
+      else
+        await c.music.setFilter(id, preset as (typeof FILTER_PRESETS)[number]);
     }
     await i.reply({
       content: `Filter: ${preset === 'status' ? (c.music.playback(id).filter ?? 'flat') : preset}. Changes apply to subsequent tracks.`,

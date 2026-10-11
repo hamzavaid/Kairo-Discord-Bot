@@ -190,7 +190,13 @@ export class KairoMusicClient {
     );
   }
 
-  disconnectVoice(guildId: string): Promise<PlaybackSnapshot> {
-    return this.engine.disconnectVoice(guildId);
+  disconnectVoice(
+    guildId: string,
+    expectedGeneration?: number,
+  ): Promise<PlaybackSnapshot> {
+    return this.engine.disconnectVoice(
+      guildId,
+      ...(expectedGeneration === undefined ? [] : [expectedGeneration]),
+    );
   }
 }

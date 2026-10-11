@@ -5,6 +5,9 @@ import {
 } from 'discord.js';
 import {
   normalizeGuildControls,
+  validateGuildControls,
+  validateIdleDisconnectSeconds,
+  validateAudioQuality,
   CONTROL_POLICIES,
   FILTER_PRESETS,
   type AudioQuality,
@@ -161,6 +164,24 @@ const command: SlashCommand = {
           'Manage Server permission is required to change settings.',
         );
 
+      try {
+        validateGuildControls(patch);
+        if (timeoutSeconds !== null)
+          validateIdleDisconnectSeconds(timeoutSeconds);
+        if (audioQuality !== null) validateAudioQuality(audioQuality);
+      } catch (error) {
+        if (error instanceof RangeError)
+          throw new CommandError(
+            'INVALID_SETTING',
+            'Invalid guild setting value.',
+          );
+        throw error;
+      }
+      if (Object.keys(patch).length && !context.settings.setControls)
+        throw new CommandError(
+          'INVALID_SETTING',
+          'Advanced settings storage is unavailable.',
+        );
       if (timeoutSeconds !== null)
         await context.settings.setIdleDisconnectSeconds(
           guildId,

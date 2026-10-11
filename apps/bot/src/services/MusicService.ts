@@ -327,8 +327,14 @@ export class MusicService {
     );
   }
 
-  async disconnect(guildId: string): Promise<void> {
-    await this.client.disconnectVoice(guildId);
+  async disconnect(
+    guildId: string,
+    expectedGeneration?: number,
+  ): Promise<void> {
+    await this.client.disconnectVoice(
+      guildId,
+      ...(expectedGeneration === undefined ? [] : [expectedGeneration]),
+    );
     this.channels.delete(guildId);
   }
 

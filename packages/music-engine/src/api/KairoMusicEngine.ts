@@ -123,7 +123,10 @@ export interface KairoMusicEngine {
     expectedGeneration?: number,
   ): Promise<QueueSnapshot>;
   connectVoice(target: VoiceTarget): Promise<PlaybackSnapshot>;
-  disconnectVoice(guildId: string): Promise<PlaybackSnapshot>;
+  disconnectVoice(
+    guildId: string,
+    expectedGeneration?: number,
+  ): Promise<PlaybackSnapshot>;
   getPlayback(guildId: string): PlaybackSnapshot;
   setVolume(
     guildId: string,
@@ -554,7 +557,6 @@ export function createKairoMusicEngine(
     },
     connectVoice(target) {
       return lock(target.guildId).runExclusive(async () => {
-        const connection = await voice.connect(target);
         const active = session(target.guildId);
         if (
           active.snapshot().state === 'DISCONNECTED' &&
@@ -567,13 +569,15 @@ export function createKairoMusicEngine(
           active.setFilter(defaults.filter);
           await queues.setRepeat(target.guildId, defaults.repeat);
         }
+        const connection = await voice.connect(target);
         active.attach(connection);
         sync(target.guildId, queues.snapshot(target.guildId));
         return active.snapshot();
       });
     },
-    disconnectVoice(guildId) {
+    disconnectVoice(guildId, expectedGeneration) {
       return lock(guildId).runExclusive(async () => {
+        assertGeneration(guildId, expectedGeneration);
         const active = sessions.get(guildId);
         active?.disconnect();
         await queues.stop(guildId);

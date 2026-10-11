@@ -24,6 +24,7 @@ import { CommandError } from '../../../errors.js';
 export class DiscoveryMenu {
   private active = true;
   private busy = false;
+  private edits = Promise.resolve();
   private version = 0;
   private section: DiscoverySection;
   private query: string | undefined;
@@ -121,6 +122,16 @@ export class DiscoveryMenu {
       ],
     };
   }
+  private edit() {
+    const work = this.edits.then(() =>
+      this.interaction.editReply(this.render()),
+    );
+    this.edits = work.then(
+      () => {},
+      () => {},
+    );
+    return work;
+  }
   async start() {
     await this.load();
     const message = await this.interaction.editReply(this.render());
@@ -140,17 +151,22 @@ export class DiscoveryMenu {
     collector.on('collect', (b) => {
       if (!this.active || b.user.id !== this.interaction.user.id) return;
       if (b.customId === `${this.prefix}:close`) {
+        this.active = false;
+        this.abort.abort();
         collector.stop('closed');
         void b
-          .update(this.render())
+          .deferUpdate()
+          .then(() => this.edit())
           .catch((e) => this.context.reportComponentError?.(e));
         return;
       }
       if (this.busy) {
-        void b.reply({
-          content: 'Discovery is updating. Try again shortly.',
-          flags: MessageFlags.Ephemeral,
-        });
+        void b
+          .reply({
+            content: 'Discovery is updating. Try again shortly.',
+            flags: MessageFlags.Ephemeral,
+          })
+          .catch((e) => this.context.reportComponentError?.(e));
         return;
       }
       this.busy = true;
@@ -224,17 +240,13 @@ export class DiscoveryMenu {
         })
         .finally(() => {
           this.busy = false;
-          void this.interaction
-            .editReply(this.render())
-            .catch((e) => this.context.reportComponentError?.(e));
+          void this.edit().catch((e) => this.context.reportComponentError?.(e));
         });
     });
     collector.on('end', () => {
       this.active = false;
       this.abort.abort();
-      void this.interaction
-        .editReply(this.render())
-        .catch((e) => this.context.reportComponentError?.(e));
+      void this.edit().catch((e) => this.context.reportComponentError?.(e));
     });
   }
 }

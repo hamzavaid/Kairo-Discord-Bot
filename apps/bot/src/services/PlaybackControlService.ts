@@ -103,7 +103,8 @@ export class PlaybackControlService {
         value as import('@kairo/music-engine').RepeatMode,
         generation,
       );
-    else if (action === 'disconnect') await this.music.disconnect(id);
+    else if (action === 'disconnect')
+      await this.music.disconnect(id, generation);
     else
       throw new CommandError(
         'INVALID_SETTING',

@@ -21,7 +21,8 @@ const command: SlashCommand = {
     const id = guild(i);
     if (mode) {
       controlVoice(i, c.music);
-      await c.music.setRepeat(id, mode);
+      if (c.controls) await c.controls.perform('repeat', i, undefined, mode);
+      else await c.music.setRepeat(id, mode);
     }
     await i.reply({
       content: `Repeat: ${mode ?? c.music.queue(id).repeatMode}.`,
