@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { libraryTrack } from './helpers/libraryModel.js';
 import { expect, it, vi } from 'vitest';
-import history from '../apps/bot/src/commands/utility/history.js';
+import history from '../apps/bot/src/commands/music/history.js';
 import stats from '../apps/bot/src/commands/utility/stats.js';
 import top from '../apps/bot/src/commands/utility/top.js';
 it('registers scoped history/statistics and top songs/artists periods', () => {

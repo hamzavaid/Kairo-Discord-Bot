@@ -1,5 +1,5 @@
 import { normalizeGuildControls } from '@kairo/data';
-import { lyricsChunks, resolveLyrics } from '../../utility/lyrics.js';
+import { lyricsChunks, resolveLyrics } from '../lyrics.js';
 import { pages } from '../../library/components.js';
 import { showTrackResults } from '../../utility/TrackResultMenu.js';
 import {

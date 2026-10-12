@@ -2,7 +2,7 @@ import { SlashCommandBuilder, MessageFlags, escapeMarkdown } from 'discord.js';
 import { CommandError } from '../../errors.js';
 import { guild } from '../guards.js';
 import { pages } from '../library/components.js';
-import { uiText } from './formatTrack.js';
+import { uiText } from '../utility/formatTrack.js';
 import type { SlashCommand, CommandExecutionContext } from '../types.js';
 import type { Track } from '@kairo/music-engine';
 export function lyricsChunks(text: string): string[] {
@@ -32,7 +32,7 @@ const command: SlashCommand = {
     .addStringOption((o) =>
       o.setName('query').setDescription('Optional song name or URL'),
     ),
-  category: 'Utility',
+  category: 'Music',
   usage: '/lyrics [query]',
   async execute(i, c) {
     await i.deferReply({ flags: MessageFlags.Ephemeral });

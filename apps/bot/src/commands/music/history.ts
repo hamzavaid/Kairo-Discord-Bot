@@ -6,7 +6,7 @@ import {
   SlashCommandBuilder,
 } from 'discord.js';
 import { CommandError } from '../../errors.js';
-import { uiText, duration } from './formatTrack.js';
+import { uiText, duration } from '../utility/formatTrack.js';
 import type { SlashCommand } from '../types.js';
 const command: SlashCommand = {
   data: new SlashCommandBuilder()
@@ -19,7 +19,7 @@ const command: SlashCommand = {
         .setMinValue(1)
         .setMaxValue(1000),
     ),
-  category: 'Utility',
+  category: 'Music',
   usage: '/history [page]',
   async execute(i, c) {
     if (!c.history)

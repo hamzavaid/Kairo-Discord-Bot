@@ -1,7 +1,7 @@
 import { SlashCommandBuilder } from 'discord.js';
 import { guild } from '../guards.js';
 import { CommandError } from '../../errors.js';
-import { showTrackResults } from './TrackResultMenu.js';
+import { showTrackResults } from '../utility/TrackResultMenu.js';
 import type { SlashCommand } from '../types.js';
 const command: SlashCommand = {
   data: new SlashCommandBuilder()
@@ -11,7 +11,7 @@ const command: SlashCommand = {
       o.setName('query').setDescription('Optional song or artist seed'),
     ),
   usage: '/recommend [query]',
-  category: 'Utility',
+  category: 'Music',
   async execute(i, c) {
     if (!c.recommendations)
       throw new CommandError(
