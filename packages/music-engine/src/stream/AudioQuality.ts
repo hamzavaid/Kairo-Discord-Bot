@@ -4,4 +4,5 @@ export const DEFAULT_AUDIO_QUALITY: AudioQuality = 'high';
 export interface StreamContext {
   guildId?: string;
   audioQuality: AudioQuality;
+  seekOffsetMs?: number;
 }

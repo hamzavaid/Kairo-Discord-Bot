@@ -342,6 +342,13 @@ export class MusicService {
     );
   }
 
+  seek(guildId: string, positionMs: number, expectedGeneration?: number) {
+    return this.client.seek(
+      guildId,
+      positionMs,
+      ...(expectedGeneration === undefined ? [] : [expectedGeneration]),
+    );
+  }
   acquirePreview(target: VoiceTarget, ownerId: string) {
     this.assertVoiceChannel(target.guildId, target.channelId);
     return this.client.acquirePreview(target, ownerId);

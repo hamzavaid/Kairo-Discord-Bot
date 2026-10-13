@@ -53,3 +53,5 @@ export type {
 } from './playback/PlaybackControls.js';
 
 export type { PlaybackAttempt, PlaybackOutcome } from './api/history.js';
+
+export { parseSeekTimestamp } from './api/seek.js';

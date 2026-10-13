@@ -190,6 +190,13 @@ export class KairoMusicClient {
     );
   }
 
+  seek(guildId: string, positionMs: number, expectedGeneration?: number) {
+    return this.engine.seek(
+      guildId,
+      positionMs,
+      ...(expectedGeneration === undefined ? [] : [expectedGeneration]),
+    );
+  }
   acquirePreview(target: VoiceTarget, ownerId: string) {
     return this.engine.acquirePreview(target, ownerId);
   }

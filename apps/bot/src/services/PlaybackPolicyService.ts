@@ -3,6 +3,7 @@ import { PermissionFlagsBits, type RepliableInteraction } from 'discord.js';
 import { CommandError } from '../errors.js';
 import type { MusicService } from './MusicService.js';
 export type PlaybackAction =
+  | 'seek'
   | 'pause'
   | 'resume'
   | 'skip'
@@ -26,6 +27,7 @@ export interface ControlActor {
   requestedBy?: string;
 }
 const disruptive = new Set<PlaybackAction>([
+  'seek',
   'stop',
   'disconnect',
   'clear',

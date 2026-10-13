@@ -481,6 +481,8 @@ it('renders a compact artwork section and separates transport, queue actions and
     'Previous',
     'Pause',
     'Skip',
+    'Rewind 10s',
+    'Forward 10s',
   ]);
   expect(rows[1].components.map((c: { label: string }) => c.label)).toEqual([
     'Shuffle',

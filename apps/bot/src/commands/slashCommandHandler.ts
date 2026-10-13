@@ -1,3 +1,4 @@
+import seekCommand from './music/seek.js';
 import { GameError } from '@kairo/games';
 import gamesCommand from './games/games.js';
 import rpsCommand from './games/rps.js';
@@ -98,6 +99,8 @@ function safeFailure(error: unknown): { code: string; message: string } {
   if (error instanceof MusicError) {
     const messages: Partial<Record<MusicError['code'], string>> = {
       QUEUE_EMPTY: 'The queue is empty.',
+      INVALID_SEEK_POSITION: 'Use a valid timestamp within the track duration.',
+      SEEK_UNSUPPORTED: 'Live or non-seekable audio cannot be seeked.',
       PLAYBACK_OWNED:
         'Music Trivia owns voice playback. End the game first, or stop/empty normal music before starting trivia.',
       PREVIEW_EXPIRED: 'The music preview session has expired.',
@@ -198,6 +201,7 @@ const builtInCommands: readonly SlashCommand[] = [
   lyricsCommand,
   voteCommand,
   discoverCommand,
+  seekCommand,
   gamesCommand,
   rpsCommand,
   hangmanCommand,
@@ -378,6 +382,7 @@ export class SlashCommandHandler {
         );
         const name = command.data.name;
         const transports = [
+          'seek',
           'pause',
           'resume',
           'skip',

@@ -83,7 +83,8 @@ export class PlaybackControlService {
         ? 'Vote passed. Skipped the song.'
         : `Skip vote: ${result.votes}/${result.required}.`;
     }
-    if (action === 'skip') await this.music.skip(id, generation);
+    if (action === 'seek') await this.music.seek(id, Number(value), generation);
+    else if (action === 'skip') await this.music.skip(id, generation);
     else if (action === 'pause') await this.music.pause(id, generation);
     else if (action === 'resume') await this.music.resume(id, generation);
     else if (action === 'stop') await this.music.stop(id, generation);

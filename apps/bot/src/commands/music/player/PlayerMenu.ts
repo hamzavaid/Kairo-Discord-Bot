@@ -1,3 +1,4 @@
+import { parseSeekTimestamp } from '@kairo/music-engine';
 import { normalizeGuildControls } from '@kairo/data';
 import { lyricsChunks, resolveLyrics } from '../lyrics.js';
 import { pages } from '../../library/components.js';
@@ -23,6 +24,9 @@ import {
 } from './playerView.js';
 
 const actions = new Set([
+  'seek',
+  'rewind',
+  'forward',
   'previous',
   'pause',
   'resume',
@@ -45,6 +49,9 @@ const actions = new Set([
   'discover',
 ]);
 const trackActions = new Set([
+  'seek',
+  'rewind',
+  'forward',
   'previous',
   'pause',
   'resume',
@@ -248,6 +255,10 @@ export class PlayerMenu {
         'STALE_PLAYER',
         'This player belongs to another server.',
       );
+    if (action.name === 'seek') {
+      await this.seekModal(i, action.generation);
+      return;
+    }
     if (action.name === 'add') {
       await this.add(i);
       return;
@@ -307,6 +318,26 @@ export class PlayerMenu {
         'The song changed. Check the refreshed player and try again.',
       );
     const guildId = this.interaction.guildId!;
+    if (action.name === 'rewind' || action.name === 'forward') {
+      voiceTarget(i, this.context);
+      if (!this.context.controls)
+        throw new CommandError(
+          'DJ_PERMISSION_REQUIRED',
+          'Seek controls are unavailable.',
+        );
+      const position = Math.max(
+        0,
+        (this.context.music.playback(guildId).positionMs ?? 0) +
+          (action.name === 'rewind' ? -10000 : 10000),
+      );
+      this.state.notice = await this.context.controls.perform(
+        'seek',
+        i,
+        action.generation,
+        position,
+      );
+      return;
+    }
     if (
       ['previous', 'pause', 'resume', 'skip', 'stop', 'shuffle'].includes(
         action.name,
@@ -433,6 +464,57 @@ export class PlayerMenu {
         : 'You already liked this song.';
     } else if (action.name === 'queue-prev') this.state.page--;
     else if (action.name === 'queue-next') this.state.page++;
+  }
+  private async seekModal(i: MessageComponentInteraction, generation: number) {
+    voiceTarget(i, this.context);
+    const id = `${this.prefix}:seek:${i.id}`;
+    await i.showModal(
+      new ModalBuilder()
+        .setCustomId(id)
+        .setTitle('Seek to a timestamp')
+        .addLabelComponents(
+          new LabelBuilder()
+            .setLabel('Seconds, m:ss or h:mm:ss')
+            .setTextInputComponent(
+              new TextInputBuilder()
+                .setCustomId('timestamp')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+                .setMaxLength(32),
+            ),
+        ),
+    );
+    const submitted = await i
+      .awaitModalSubmit({
+        time: Math.max(1, Math.min(60000, this.deadline - Date.now())),
+        filter: (s) => s.user.id === i.user.id && s.customId === id,
+      })
+      .catch(() => undefined);
+    if (!submitted) return;
+    await submitted.deferUpdate();
+    if (!this.state.active) {
+      await submitted.followUp({
+        content: 'This player has expired.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+    try {
+      voiceTarget(submitted, this.context);
+      if (!this.context.controls)
+        throw new CommandError(
+          'DJ_PERMISSION_REQUIRED',
+          'Seek controls are unavailable.',
+        );
+      this.state.notice = await this.context.controls.perform(
+        'seek',
+        submitted,
+        generation,
+        parseSeekTimestamp(submitted.fields.getTextInputValue('timestamp')),
+      );
+    } catch (e) {
+      await this.failure(e, submitted);
+    }
   }
   private async add(i: MessageComponentInteraction) {
     voiceTarget(i, this.context);

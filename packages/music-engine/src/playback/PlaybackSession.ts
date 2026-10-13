@@ -1,3 +1,4 @@
+import { validateSeekPosition } from '../api/seek.js';
 import { randomUUID } from 'node:crypto';
 import type { PlaybackAttempt, PlaybackOutcome } from '../api/history.js';
 import {
@@ -31,13 +32,18 @@ import {
 } from './PlaybackStateMachine.js';
 
 export interface PlaybackSessionOptions {
+  now?: () => number;
   onAttempt?: (attempt: PlaybackAttempt) => void;
   prepareTrack?: (track: Track, signal: AbortSignal) => Promise<Track>;
   guildId: string;
   resolver: Pick<StreamResolver, 'resolve'>;
   player?: AudioPlayer;
   createResource?: typeof createAudioResource;
-  prepare?: (source: AudioSource, filter?: FilterPreset) => PreparedAudio;
+  prepare?: (
+    source: AudioSource,
+    filter?: FilterPreset,
+    offsetMs?: number,
+  ) => PreparedAudio;
   onEnded?: (
     generation: number,
     cause: 'track-ended' | 'stream-failed',
@@ -72,6 +78,7 @@ export class PlaybackSession {
   private readonly prepare: (
     source: AudioSource,
     filter?: FilterPreset,
+    offsetMs?: number,
   ) => PreparedAudio;
   private readonly createResource: typeof createAudioResource;
   private connection: VoiceConnection | undefined;
@@ -86,6 +93,46 @@ export class PlaybackSession {
   private volume = 100;
   private filter: FilterPreset = 'flat';
   private resource: AudioResource | undefined;
+  private resourceVersion = 0;
+  private sourceSeekable = false;
+  private offsetMs = 0;
+  private audibleBefore = 0;
+  private activeFilter: FilterPreset = 'flat';
+  private seekAbort: AbortController | undefined;
+  private pauseOnReady = false;
+  private now() {
+    return this.options.now?.() ?? performance.now();
+  }
+  private audible() {
+    return (
+      this.resource?.playbackDuration ??
+      this.listenedMs +
+        (this.listeningSince === undefined
+          ? 0
+          : Math.max(0, this.now() - this.listeningSince))
+    );
+  }
+  private position() {
+    const rate =
+      this.activeFilter === 'nightcore'
+        ? 1.25
+        : this.activeFilter === 'vaporwave'
+          ? 0.8
+          : 1;
+    const value = this.entry
+      ? Math.round(this.offsetMs + this.audible() * rate)
+      : 0;
+    return Math.max(
+      0,
+      Math.min(
+        value,
+        this.entry?.track.isLive
+          ? Infinity
+          : (this.entry?.track.durationMs ?? Infinity),
+      ),
+    );
+  }
+
   private suppressed = new Set<number>();
   private bufferTimer: NodeJS.Timeout | undefined;
 
@@ -100,7 +147,8 @@ export class PlaybackSession {
       options.ffmpegPath ? { executable: options.ffmpegPath } : {},
     );
     this.prepare =
-      options.prepare ?? ((source, filter) => pipeline.prepare(source, filter));
+      options.prepare ??
+      ((source, filter, offset) => pipeline.prepare(source, filter, offset));
     this.player.on('stateChange', (oldState, newState) => {
       if (
         newState.status === AudioPlayerStatus.Playing &&
@@ -108,6 +156,10 @@ export class PlaybackSession {
       ) {
         this.clearBufferTimer();
         this.transition('PLAYING');
+        if (this.pauseOnReady) {
+          this.pauseOnReady = false;
+          this.pause();
+        }
       } else if (
         newState.status === AudioPlayerStatus.Paused &&
         this.machine.state === 'PLAYING'
@@ -116,13 +168,14 @@ export class PlaybackSession {
       else if (newState.status === AudioPlayerStatus.Idle) {
         const ended =
           'resource' in oldState
-            ? (oldState.resource.metadata as
-                { generation?: number } | undefined)
+            ? (oldState.resource?.metadata as
+                { generation?: number; resourceVersion?: number } | undefined)
             : undefined;
         const token = ended?.generation;
         if (
           token !== undefined &&
           token === this.generation &&
+          (ended?.resourceVersion ?? 0) === this.resourceVersion &&
           !this.suppressed.has(token)
         ) {
           this.stop('completed');
@@ -130,7 +183,15 @@ export class PlaybackSession {
         }
       }
     });
-    this.player.on('error', () => {
+    this.player.on('error', (error) => {
+      const metadata = error.resource?.metadata as
+        { generation?: number; resourceVersion?: number } | undefined;
+      if (
+        metadata &&
+        (metadata.generation !== this.generation ||
+          (metadata.resourceVersion ?? 0) !== this.resourceVersion)
+      )
+        return;
       this.fail(
         new MusicError('STREAM_UNAVAILABLE', 'Playback failed.'),
         this.generation,
@@ -140,12 +201,12 @@ export class PlaybackSession {
 
   private transition(next: PlaybackState): void {
     if (this.machine.state === 'PLAYING' && this.listeningSince !== undefined) {
-      this.listenedMs += Math.max(0, performance.now() - this.listeningSince);
+      this.listenedMs += Math.max(0, this.now() - this.listeningSince);
       this.listeningSince = undefined;
     }
     this.machine.transition(next);
     if (next === 'PLAYING') {
-      this.listeningSince = performance.now();
+      this.listeningSince = this.now();
       if (this.attempt && !this.attempt.startedAt) {
         this.attempt.startedAt = new Date();
         this.attempt.status = 'playing';
@@ -181,6 +242,11 @@ export class PlaybackSession {
     this.entry = structuredClone(entry);
     this.listenedMs = 0;
     this.listeningSince = undefined;
+    this.audibleBefore = 0;
+    this.offsetMs = 0;
+    this.resourceVersion = 0;
+    this.sourceSeekable = false;
+    this.pauseOnReady = false;
     this.attempt = {
       attemptId: randomUUID(),
       guildId: this.options.guildId,
@@ -225,6 +291,8 @@ export class PlaybackSession {
         source.dispose?.();
         return;
       }
+      this.sourceSeekable = source.seekable && !entry.track.isLive;
+      this.activeFilter = this.filter;
       this.options.onSourceSelected?.(source, entry, audioQuality, generation);
       let prepared: PreparedAudio;
       try {
@@ -240,7 +308,7 @@ export class PlaybackSession {
       this.prepared = prepared;
       const resource = this.createResource(prepared.input, {
         inputType: streamType[prepared.inputType] ?? StreamType.Arbitrary,
-        metadata: { generation },
+        metadata: { generation, resourceVersion: this.resourceVersion },
         inlineVolume: true,
       });
       this.resource = resource;
@@ -296,6 +364,97 @@ export class PlaybackSession {
     this.filter = filter;
     return this.snapshot();
   }
+  async seek(positionMs: number): Promise<PlaybackSnapshot> {
+    validateSeekPosition(positionMs, this.entry?.track.durationMs);
+    if (!this.entry || !['PLAYING', 'PAUSED'].includes(this.machine.state))
+      throw new MusicError(
+        'INVALID_PLAYBACK_TRANSITION',
+        'Seek while a track is playing or paused.',
+      );
+    if (!this.sourceSeekable || this.entry.track.isLive)
+      throw new MusicError(
+        'SEEK_UNSUPPORTED',
+        'Live or non-seekable sources cannot be seeked.',
+      );
+    this.seekAbort?.abort();
+    const controller = new AbortController();
+    this.seekAbort = controller;
+    const lifecycle = this.abort!;
+    const signal = AbortSignal.any([controller.signal, lifecycle.signal]);
+    const generation = this.generation;
+    const entry = this.entry;
+    let source: AudioSource | undefined;
+    let prepared: PreparedAudio | undefined;
+    try {
+      const quality =
+        (await this.options.audioQualityForGuild?.(
+          this.options.guildId,
+          signal,
+        )) ?? DEFAULT_AUDIO_QUALITY;
+      if (signal.aborted)
+        throw new MusicError('STREAM_CANCELLED', 'Seek was cancelled.');
+      source = await this.options.resolver.resolve(entry.track, signal, {
+        guildId: this.options.guildId,
+        audioQuality: quality,
+        seekOffsetMs: positionMs,
+      });
+      if (
+        signal.aborted ||
+        this.generation !== generation ||
+        this.entry !== entry
+      )
+        throw new MusicError('STREAM_CANCELLED', 'Seek was superseded.');
+      if (!source.seekable)
+        throw new MusicError(
+          'SEEK_UNSUPPORTED',
+          'This source no longer supports seeking.',
+        );
+      prepared = this.prepare(source, this.activeFilter, positionMs);
+      const resource = this.createResource(prepared.input, {
+        inputType: streamType[prepared.inputType] ?? StreamType.Arbitrary,
+        metadata: { generation, resourceVersion: this.resourceVersion + 1 },
+        inlineVolume: true,
+      });
+      const paused = this.machine.state === 'PAUSED';
+      this.audibleBefore += this.audible();
+      this.resourceVersion++;
+      this.transition('STOPPING');
+      this.clearBufferTimer();
+      this.prepared?.dispose();
+      lifecycle.abort();
+      this.player.stop(true);
+      this.listenedMs = 0;
+      this.listeningSince = undefined;
+      this.offsetMs = positionMs;
+      this.pauseOnReady = paused;
+      this.transition('IDLE');
+      this.transition('RESOLVING');
+      this.prepared = prepared;
+      this.resource = resource;
+      this.abort = controller;
+      this.seekAbort = undefined;
+      resource.volume?.setVolume(this.volume / 100);
+      this.transition('BUFFERING');
+      this.bufferTimer = setTimeout(
+        () =>
+          this.fail(
+            new MusicError('STREAM_TIMEOUT', 'Seek buffering timed out.'),
+            generation,
+          ),
+        this.options.bufferTimeoutMs ?? 15000,
+      );
+      this.player.play(resource);
+      return this.snapshot();
+    } catch (error) {
+      prepared?.dispose();
+      source?.dispose?.();
+      if (this.seekAbort === controller) this.seekAbort = undefined;
+      if (signal.aborted && !(error instanceof MusicError))
+        throw new MusicError('STREAM_CANCELLED', 'Seek was cancelled.');
+      throw error;
+    }
+  }
+
   pause(): PlaybackSnapshot {
     if (this.machine.state !== 'PLAYING' || !this.player.pause())
       throw new MusicError(
@@ -323,13 +482,10 @@ export class PlaybackSession {
       return this.snapshot();
     this.suppressed.add(this.generation);
     if (this.attempt) {
-      const elapsed =
-        this.listenedMs +
-        (this.listeningSince === undefined
-          ? 0
-          : Math.max(0, performance.now() - this.listeningSince));
-      const observed = this.resource?.playbackDuration;
-      this.attempt.listenedMs = Math.max(0, Math.round(observed ?? elapsed));
+      this.attempt.listenedMs = Math.max(
+        0,
+        Math.round(this.audibleBefore + this.audible()),
+      );
       if (!this.attempt.startedAt) this.attempt.listenedMs = 0;
       this.attempt.status = outcome;
       this.attempt.endedAt = new Date();
@@ -338,6 +494,8 @@ export class PlaybackSession {
       this.options.onAttempt?.(structuredClone(finished));
     }
     this.clearBufferTimer();
+    this.seekAbort?.abort();
+    this.seekAbort = undefined;
     this.abort?.abort();
     this.abort = undefined;
     this.prepared?.dispose();
@@ -346,6 +504,11 @@ export class PlaybackSession {
     this.transition('STOPPING');
     this.player.stop(true);
     this.entry = undefined;
+    this.sourceSeekable = false;
+    this.offsetMs = 0;
+    this.listenedMs = 0;
+    this.audibleBefore = 0;
+    this.listeningSince = undefined;
     this.transition('IDLE');
     return this.snapshot();
   }
@@ -366,6 +529,17 @@ export class PlaybackSession {
       state: this.machine.state,
       current: this.entry ? structuredClone(this.entry) : undefined,
       generation: this.generation,
+      positionMs: this.position(),
+      seekable: this.sourceSeekable,
+      ...(this.entry?.track.durationMs !== undefined && !this.entry.track.isLive
+        ? {
+            durationMs: this.entry.track.durationMs,
+            remainingMs: Math.max(
+              0,
+              this.entry.track.durationMs - this.position(),
+            ),
+          }
+        : {}),
       volume: this.volume,
       filter: this.filter,
     };

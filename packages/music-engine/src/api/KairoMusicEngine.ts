@@ -128,6 +128,11 @@ export interface KairoMusicEngine {
     guildId: string,
     expectedGeneration?: number,
   ): Promise<PlaybackSnapshot>;
+  seek(
+    guildId: string,
+    positionMs: number,
+    expectedGeneration?: number,
+  ): Promise<PlaybackSnapshot>;
   acquirePreview(
     target: VoiceTarget,
     ownerId: string,
@@ -662,6 +667,19 @@ export function createKairoMusicEngine(
           }
         );
       });
+    },
+    async seek(guildId, positionMs, expectedGeneration) {
+      const admitted = await lock(guildId).runExclusive(() => {
+        assertGeneration(guildId, expectedGeneration);
+        const active = sessions.get(guildId);
+        if (!active)
+          throw new MusicError(
+            'INVALID_PLAYBACK_TRANSITION',
+            'Nothing is playing.',
+          );
+        return { work: active.seek(positionMs) };
+      });
+      return admitted.work;
     },
     acquirePreview(target, ownerId) {
       return lock(target.guildId).runExclusive(async () => {

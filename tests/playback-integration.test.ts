@@ -211,7 +211,11 @@ it('preserves active audio when previous history is empty and restores history i
     await expect(engine.previous(guildId)).rejects.toMatchObject({
       code: 'QUEUE_EMPTY',
     });
-    expect(engine.getPlayback(guildId)).toEqual(before);
+    const after = engine.getPlayback(guildId);
+    const { positionMs, remainingMs, ...stable } = before;
+    void remainingMs;
+    expect(after).toMatchObject(stable);
+    expect(after.positionMs).toBeGreaterThanOrEqual(positionMs ?? 0);
     await engine.skip(guildId);
     await vi.waitFor(() =>
       expect(engine.getPlayback(guildId).state).toBe('PLAYING'),

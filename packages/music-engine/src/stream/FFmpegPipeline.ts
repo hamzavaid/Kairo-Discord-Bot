@@ -1,3 +1,4 @@
+import { validateSeekPosition } from '../api/seek.js';
 import { createReadStream } from 'node:fs';
 import {
   spawn as nodeSpawn,
@@ -25,9 +26,23 @@ export class FFmpegPipeline {
     this.executable = options.executable ?? 'ffmpeg';
   }
 
-  prepare(source: AudioSource, filter: FilterPreset = 'flat'): PreparedAudio {
+  prepare(
+    source: AudioSource,
+    filter: FilterPreset = 'flat',
+    offsetMs = 0,
+  ): PreparedAudio {
+    validateSeekPosition(offsetMs);
+    if (offsetMs && !source.seekable)
+      throw new MusicError(
+        'SEEK_UNSUPPORTED',
+        'This audio source cannot be seeked.',
+      );
     validateFilter(filter);
-    if (filter === 'flat' && !new AudioProbe().inspect(source).needsTranscode) {
+    if (
+      !offsetMs &&
+      filter === 'flat' &&
+      !new AudioProbe().inspect(source).needsTranscode
+    ) {
       const input =
         source.kind === 'file' ? createReadStream(source.input) : source.input;
       let closed = false;
@@ -47,8 +62,14 @@ export class FFmpegPipeline {
       '-hide_banner',
       '-loglevel',
       'error',
+      ...(offsetMs && source.kind === 'file'
+        ? ['-ss', String(offsetMs / 1000)]
+        : []),
       '-i',
       source.kind === 'file' ? source.input : 'pipe:0',
+      ...(offsetMs && source.kind !== 'file'
+        ? ['-ss', String(offsetMs / 1000)]
+        : []),
       '-vn',
       ...(filter === 'flat' ? [] : ['-af', FILTER_GRAPHS[filter]]),
       '-c:a',

@@ -17,6 +17,10 @@ export interface PlaybackSnapshot {
   state: PlaybackState;
   current: QueueEntry | undefined;
   generation: number;
+  positionMs?: number;
+  durationMs?: number;
+  remainingMs?: number;
+  seekable?: boolean;
   previewActive?: boolean;
   volume?: number;
   filter?: import('../playback/PlaybackControls.js').FilterPreset;

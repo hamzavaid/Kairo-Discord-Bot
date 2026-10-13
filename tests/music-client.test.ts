@@ -32,6 +32,7 @@ describe('bot music adapter', () => {
       resume: vi.fn(),
       on: vi.fn(),
       shutdown: vi.fn(),
+      seek: vi.fn(),
       acquirePreview: vi.fn(),
       playPreview: vi.fn(),
       stopPreview: vi.fn(),

@@ -1,3 +1,4 @@
+import { progressText } from './progress.js';
 import {
   ActionRowBuilder,
   ButtonBuilder,
@@ -56,6 +57,8 @@ const statusLabels: Record<PlaybackSnapshot['state'], string> = {
   ERROR: 'Playback interrupted',
 };
 const icons: Record<string, string> = {
+  rewind: '\u23ea',
+  forward: '\u23e9',
   previous: '\u23ee\ufe0f',
   pause: '\u23f8\ufe0f',
   resume: '\u25b6\ufe0f',
@@ -122,7 +125,7 @@ export function playerView(
         .map((a) => uiText(a.name, 50))
         .join(
           ' \u00b7 ',
-        )}\n-# ${track.isLive ? 'Live' : duration(track.durationMs)} \u00b7 ${sourceName(track.sourceProvider)}${track.album ? ` \u00b7 ${uiText(track.album.title, 80)}` : ''}`,
+        )}\n-# ${track.isLive ? 'Live' : duration(track.durationMs)} \u00b7 ${sourceName(track.sourceProvider)} \n-# ${progressText(playback, track)}${track.album ? ` \u00b7 ${uiText(track.album.title, 80)}` : ''}`,
     );
     const image = trackArtwork(track);
     if (image)
@@ -139,7 +142,9 @@ export function playerView(
   } else
     card.addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
-        '### Nothing playing\nAdd a song or playlist to start listening. Your upcoming songs will appear below.',
+        playback.previewActive
+          ? '### Music Trivia owns voice\nEnd the game before starting normal music.'
+          : '### Nothing playing\nAdd a song or playlist to start listening. Your upcoming songs will appear below.',
       ),
     );
   card.addActionRowComponents(
@@ -158,6 +163,8 @@ export function playerView(
             ButtonStyle.Primary,
           ),
       controls('skip', 'Skip', !current),
+      controls('rewind', 'Rewind 10s', !current || !playback.seekable),
+      controls('forward', 'Forward 10s', !current || !playback.seekable),
     ),
   );
   const liked = current && state.liked.has(current.id);
@@ -186,6 +193,7 @@ export function playerView(
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       controls('unlike', 'Unlike', !current || !hasLibrary),
       controls('discover', 'Discover', !data.discoveryAvailable),
+      controls('seek', 'Seek', !current || !playback.seekable),
     ),
   );
   card.addActionRowComponents(
