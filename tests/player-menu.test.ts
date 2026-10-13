@@ -478,21 +478,23 @@ it('renders a compact artwork section and separates transport, queue actions and
   );
   const rows = card.components.filter((c: { type: number }) => c.type === 1);
   expect(rows[0].components.map((c: { label: string }) => c.label)).toEqual([
+    'Rewind 10s',
     'Previous',
     'Pause',
     'Skip',
-    'Rewind 10s',
     'Forward 10s',
   ]);
   expect(rows[1].components.map((c: { label: string }) => c.label)).toEqual([
+    'Volume -',
     'Shuffle',
     'Like song',
     'Add song',
+    'Volume +',
   ]);
   expect(rows.at(-1).components.map((c: { label: string }) => c.label)).toEqual(
     ['Refresh', 'Stop', 'Close'],
   );
-  expect(rows[0].components[1].style).toBe(1);
+  expect(rows[0].components[2].style).toBe(1);
   expect(
     rows[0].components.every((c: { emoji?: unknown }) => Boolean(c.emoji)),
   ).toBe(true);

@@ -149,6 +149,7 @@ export function playerView(
     );
   card.addActionRowComponents(
     new ActionRowBuilder<ButtonBuilder>().addComponents(
+      controls('rewind', 'Rewind 10s', !current || !playback.seekable),
       controls(
         'previous',
         'Previous',
@@ -163,13 +164,13 @@ export function playerView(
             ButtonStyle.Primary,
           ),
       controls('skip', 'Skip', !current),
-      controls('rewind', 'Rewind 10s', !current || !playback.seekable),
       controls('forward', 'Forward 10s', !current || !playback.seekable),
     ),
   );
   const liked = current && state.liked.has(current.id);
   card.addActionRowComponents(
     new ActionRowBuilder<ButtonBuilder>().addComponents(
+      controls('volume-down', 'Volume -'),
       controls('shuffle', 'Shuffle', queue.upcoming.length < 2),
       controls(
         'like',
@@ -178,14 +179,13 @@ export function playerView(
         ButtonStyle.Success,
       ),
       controls('add', 'Add song', false),
+      controls('volume-up', 'Volume +'),
     ),
   );
   card.addActionRowComponents(
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       controls('repeat', `Repeat: ${queue.repeatMode}`),
       controls('autoplay', `Autoplay: ${data.autoplay ? 'on' : 'off'}`),
-      controls('volume-down', 'Volume -'),
-      controls('volume-up', 'Volume +'),
       controls('lyrics', 'Lyrics', !current || !data.lyricsAvailable),
     ),
   );

@@ -33,6 +33,13 @@ describe('Phase 5 stream pipeline', () => {
       inputType: 'opus',
       sourceProvider: 'fixture',
     });
+    const prepared = new FFmpegPipeline({
+      spawn: vi.fn(() => {
+        throw new Error('FFmpeg should not start for raw Opus packets.');
+      }) as never,
+    }).prepare(source, 'flat', 0, true);
+    expect(prepared.inputType).toBe('opus');
+    prepared.dispose();
     expect(new AudioProbe().inspect(source).needsTranscode).toBe(false);
     expect(
       new AudioProbe().inspect({
@@ -110,6 +117,51 @@ describe('Phase 5 stream pipeline', () => {
     expect(child.kill).toHaveBeenCalledTimes(1);
   });
 
+  it('uses managed FFmpeg to produce PCM for live volume on container audio', () => {
+    const child = Object.assign(new EventEmitter(), {
+      stdin: new Writable({
+        write(_chunk, _encoding, callback) {
+          callback();
+        },
+      }),
+      stdout: new Readable({ read() {} }),
+      stderr: new Readable({ read() {} }),
+      kill: vi.fn(() => true),
+    });
+    const spawn = vi.fn(() => child as never);
+    const pipeline = new FFmpegPipeline({
+      executable: 'C:/managed/ffmpeg.exe',
+      spawn,
+    });
+    const prepared = pipeline.prepare(
+      {
+        kind: 'readable',
+        input: new Readable({ read() {} }),
+        inputType: 'webm/opus',
+        sourceProvider: 'yt-dlp',
+        seekable: false,
+      },
+      'flat',
+      0,
+      true,
+    );
+    expect(prepared.inputType).toBe('raw');
+    expect(spawn).toHaveBeenCalledWith(
+      'C:/managed/ffmpeg.exe',
+      expect.arrayContaining([
+        '-f',
+        's16le',
+        '-ar',
+        '48000',
+        '-ac',
+        '2',
+        'pipe:1',
+      ]),
+      expect.objectContaining({ shell: false }),
+    );
+    prepared.dispose();
+  });
+
   it('cleans up FFmpeg after a child process error', () => {
     const child = Object.assign(new EventEmitter(), {
       stdin: new Writable({
@@ -130,6 +182,32 @@ describe('Phase 5 stream pipeline', () => {
       seekable: false,
     });
     expect(() => child.emit('error', new Error('private path'))).not.toThrow();
+    expect(child.kill).toHaveBeenCalledOnce();
+  });
+
+  it('does not surface a process-kill race during idempotent cleanup', () => {
+    const child = Object.assign(new EventEmitter(), {
+      stdin: new Writable({
+        write(_chunk, _encoding, callback) {
+          callback();
+        },
+      }),
+      stdout: new Readable({ read() {} }),
+      stderr: new Readable({ read() {} }),
+      kill: vi.fn(() => {
+        throw Object.assign(new Error('already exited'), { code: 'EINVAL' });
+      }),
+    });
+    const pipeline = new FFmpegPipeline({ spawn: (() => child) as never });
+    const prepared = pipeline.prepare({
+      kind: 'file',
+      input: 'C:/fixtures/tone.wav',
+      inputType: 'arbitrary',
+      sourceProvider: 'fixture',
+      seekable: false,
+    });
+    expect(() => prepared.dispose()).not.toThrow();
+    expect(() => prepared.dispose()).not.toThrow();
     expect(child.kill).toHaveBeenCalledOnce();
   });
 

@@ -30,6 +30,7 @@ export class FFmpegPipeline {
     source: AudioSource,
     filter: FilterPreset = 'flat',
     offsetMs = 0,
+    inlineVolume = false,
   ): PreparedAudio {
     validateSeekPosition(offsetMs);
     if (offsetMs && !source.seekable)
@@ -38,9 +39,14 @@ export class FFmpegPipeline {
         'This audio source cannot be seeked.',
       );
     validateFilter(filter);
+    const canApplyVolumeWithoutFFmpeg =
+      !inlineVolume ||
+      source.inputType === 'opus' ||
+      source.inputType === 'raw';
     if (
       !offsetMs &&
       filter === 'flat' &&
+      canApplyVolumeWithoutFFmpeg &&
       !new AudioProbe().inspect(source).needsTranscode
     ) {
       const input =
@@ -72,10 +78,9 @@ export class FFmpegPipeline {
         : []),
       '-vn',
       ...(filter === 'flat' ? [] : ['-af', FILTER_GRAPHS[filter]]),
-      '-c:a',
-      'libopus',
-      '-f',
-      'ogg',
+      ...(inlineVolume
+        ? ['-c:a', 'pcm_s16le', '-f', 's16le', '-ar', '48000', '-ac', '2']
+        : ['-c:a', 'libopus', '-f', 'ogg']),
       'pipe:1',
     ];
     let child: ChildProcessWithoutNullStreams;
@@ -99,7 +104,11 @@ export class FFmpegPipeline {
       child.stdin.destroy();
       child.stdout.destroy();
       child.stderr.destroy();
-      child.kill();
+      try {
+        child.kill();
+      } catch {
+        // Cleanup remains idempotent when the process exits concurrently.
+      }
     };
     // Drain diagnostics without retaining raw input or unbounded stderr.
     child.stderr.on('data', () => {});
@@ -114,6 +123,10 @@ export class FFmpegPipeline {
       });
       source.input.pipe(child.stdin);
     }
-    return { input: child.stdout, inputType: 'ogg/opus', dispose };
+    return {
+      input: child.stdout,
+      inputType: inlineVolume ? 'raw' : 'ogg/opus',
+      dispose,
+    };
   }
 }

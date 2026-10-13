@@ -43,6 +43,7 @@ export interface PlaybackSessionOptions {
     source: AudioSource,
     filter?: FilterPreset,
     offsetMs?: number,
+    inlineVolume?: boolean,
   ) => PreparedAudio;
   onEnded?: (
     generation: number,
@@ -79,8 +80,10 @@ export class PlaybackSession {
     source: AudioSource,
     filter?: FilterPreset,
     offsetMs?: number,
+    inlineVolume?: boolean,
   ) => PreparedAudio;
   private readonly createResource: typeof createAudioResource;
+  private readonly manageInlineVolume: boolean;
   private connection: VoiceConnection | undefined;
   private subscription: PlayerSubscription | undefined;
   private abort: AbortController | undefined;
@@ -142,13 +145,17 @@ export class PlaybackSession {
       createAudioPlayer({
         behaviors: { noSubscriber: NoSubscriberBehavior.Play },
       });
+    this.manageInlineVolume = options.createResource === undefined;
     this.createResource = options.createResource ?? createAudioResource;
     const pipeline = new FFmpegPipeline(
       options.ffmpegPath ? { executable: options.ffmpegPath } : {},
     );
     this.prepare =
       options.prepare ??
-      ((source, filter, offset) => pipeline.prepare(source, filter, offset));
+      ((source, filter, offset, inlineVolume) =>
+        inlineVolume === undefined
+          ? pipeline.prepare(source, filter, offset)
+          : pipeline.prepare(source, filter, offset, inlineVolume));
     this.player.on('stateChange', (oldState, newState) => {
       if (
         newState.status === AudioPlayerStatus.Playing &&
@@ -296,7 +303,9 @@ export class PlaybackSession {
       this.options.onSourceSelected?.(source, entry, audioQuality, generation);
       let prepared: PreparedAudio;
       try {
-        prepared = this.prepare(source, this.filter);
+        prepared = this.manageInlineVolume
+          ? this.prepare(source, this.filter, 0, true)
+          : this.prepare(source, this.filter);
       } catch (error) {
         source.dispose?.();
         throw error;
@@ -463,7 +472,9 @@ export class PlaybackSession {
           'SEEK_UNSUPPORTED',
           'This source no longer supports seeking.',
         );
-      prepared = this.prepare(source, this.activeFilter, positionMs);
+      prepared = this.manageInlineVolume
+        ? this.prepare(source, this.activeFilter, positionMs, true)
+        : this.prepare(source, this.activeFilter, positionMs);
       const resource = this.createResource(prepared.input, {
         inputType: streamType[prepared.inputType] ?? StreamType.Arbitrary,
         metadata: { generation, resourceVersion: this.resourceVersion + 1 },
