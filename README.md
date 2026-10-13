@@ -1,63 +1,162 @@
 # Kairo-Discord-Bot
 
-Kairo is a TypeScript Discord music and entertainment platform under reconstruction. The workspace separates the Discord application from a reusable `@kairo/music-engine` API. The engine parses metadata through `youtube-sr` by default, or through a configured YouTube Data API, Spotify, or MusicBrainz adapter. The engine now has per-guild queues and a fixture/local audio playback pipeline through `@discordjs/voice`. Discord music commands are not yet implemented.
+Kairo is a TypeScript Discord music and games bot built as a pnpm monorepo. It combines music search and playback, persistent personal libraries, interactive player menus, and multiplayer games. Discord commands use discord.js; audio playback uses `@discordjs/voice` directly, without discord-player or Lavalink.
 
-## Development
+## Workspace
 
-Use Node.js 24.17+ and pnpm 10. Install with `pnpm install --frozen-lockfile`, then run `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm build`. Copy `.env.example` to a local `.env` and supply credentials before running the bot. The `.env` file is ignored by Git.
+| Location                | Package               | Responsibility                                                                                                                                     |
+| ----------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/bot`              | `@kairo/bot`          | Discord commands, components, interaction handling, authorization, auditing, and service orchestration                                             |
+| `packages/music-engine` | `@kairo/music-engine` | Canonical tracks, parsing, metadata adapters, candidate matching, per-guild queues, voice sessions, stream resolution, and managed audio processes |
+| `packages/data`         | `@kairo/data`         | MongoDB repositories for guild settings, playlists, Liked Songs, listening history, command audits, game results, and game settings                |
+| `packages/games`        | `@kairo/games`        | Discord-independent game sessions, rules, spectators, answer matching, and scoring                                                                 |
+| `packages/shared`       | `@kairo/shared`       | Validated environment configuration and structured logging                                                                                         |
+| `tests`                 | Workspace tests       | Offline fixtures, unit tests, integration tests, and explicitly opt-in external checks                                                             |
 
-The technical specification and implementation notes are kept locally under `docs/` and are excluded from Git. Public architecture documentation, when added, belongs under `docs/public/`.
+The bot consumes the music engine through its exported API. Commands delegate to services rather than accessing parser, queue, voice, stream, or FFmpeg internals. Each command module owns its builder and execution function; `slashCommandHandler.ts` handles lookup, aliases, registration, execution, auditing, and safe errors.
 
-## Metadata providers
+Technical specifications and working notes under `docs/` are internal and excluded from Git. The local `legacy/` tree is a behavioral reference rather than the current architecture.
 
-The default `youtube-sr` adapter needs no credentials and uses an unofficial, scraper-backed package that may break when YouTube changes. Choose another provider and an optional fallback chain when creating the engine:
+## Features
 
-```ts
-import { createKairoMusicEngine } from '@kairo/music-engine';
+### Music and playback
 
-const engine = createKairoMusicEngine({
-  metadataProvider: 'spotify',
-  fallbackProviders: ['musicbrainz', 'youtube-api', 'youtube-sr'],
-  spotify: {
-    clientId: process.env.SPOTIFY_CLIENT_ID!,
-    clientSecret: process.env.SPOTIFY_CLIENT_SECRET!,
-  },
-  musicBrainz: { contact: process.env.MUSICBRAINZ_USER_AGENT! },
-  youtubeApi: { apiKey: process.env.YOUTUBE_API_KEY! },
-});
+- Search by text or resolve supported YouTube and Spotify track/collection URLs.
+- Queue tracks in order, play next, shuffle, move/remove entries, repeat, and return to previous tracks.
+- Control pause/resume, skip, stop, disconnect, volume, filters, and autoplay.
+- Use `/player` for artwork, track details, queue controls, live progress, remaining time, and personal library actions.
+- Configure persistent per-guild audio quality, playback permissions, and empty-channel disconnect behavior.
+- Inspect metadata with `/info` or its `/search` alias, including multiple results, artwork, links, and save/like/play actions.
+- Browse recommendations, lyrics, listening history, statistics, and the prototype `/discover` interface.
+
+### Personal libraries
+
+MongoDB-backed playlists and Liked Songs survive restarts. Users can create, inspect, modify, import, and play ordered playlists, or like/unlike tracks and play their library. Component menus provide pagination and confirmation for destructive actions. `/menu` offers an interactive library browser.
+
+### Games
+
+RPS, Hangman, UNO, and Music Trivia share a session system with lobbies, spectators, bounded timers, and persistent statistics and leaderboards. `/games` provides a unified menu and guild game settings; the **Invite to Game** user context menu starts challenges.
+
+Music Trivia supports song, artist, or combined answers using catalog search, the host's Liked Songs, a host-owned Kairo playlist, or a supported public collection. It reuses the canonical music pipeline for bounded previews and requires normal music playback to be idle with an empty queue. Answers remain hidden until the round resolves.
+
+## Metadata and audio architecture
+
+```text
+Query / supported URL
+  -> SongParser + MetadataProviderManager
+  -> canonical Track / ordered TrackCollection
+  -> playable candidate discovery + CandidateMatcher, when needed
+  -> StreamResolver + YtDlpStreamProvider
+  -> AudioSource + AudioProbe / FFmpegPipeline
+  -> PlaybackSession + @discordjs/voice
 ```
 
-An explicit provider or fallback with missing credentials fails at construction. With no fallback list, a provider failure is returned to the caller. Spotify and MusicBrainz supply metadata only; no adapter here resolves audio streams. When an offline `fixtureTracks` list is supplied without `metadataProvider`, fixture search keeps the previous development behavior.
+Metadata and audio resolution are separate layers:
 
-## MusicBrainz metadata
+| Metadata provider | Configuration                                                     | Notes                                                                          |
+| ----------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `youtube-sr`      | No credentials                                                    | Default; unofficial scraper-backed adapter that can break when YouTube changes |
+| `youtube-api`     | `YOUTUBE_API_KEY`                                                 | YouTube Data API search and metadata; quota-sensitive                          |
+| `spotify`         | `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`; optional user grant | Track and collection metadata; never a Spotify audio source                    |
+| `musicbrainz`     | `MUSICBRAINZ_USER_AGENT` identifying contact                      | Throttled and cached metadata/identity lookup; not an audio source             |
 
-MusicBrainz is an opt-in metadata source. Pass a real contact URL or email so Kairo can identify itself in API requests:
+The engine supports explicit provider selection and an optional fallback chain. No fallback occurs unless configured, and missing credentials for selected providers fail at construction. `KAIRO_METADATA_PROVIDER` selects the bot's search provider; `KAIRO_PLAYABLE_SEARCH_PROVIDER` selects `youtube-sr` or `youtube-api` for YouTube candidate discovery.
 
-```ts
-import { createKairoMusicEngine } from '@kairo/music-engine';
+Production audio uses yt-dlp for available public YouTube resources. Spotify/MusicBrainz tracks require a reliable matching YouTube candidate; YouTube-origin tracks reuse their video identity. Guild audio quality is `low`, `medium`, `high` (default), or `best`. Compatible native Opus is preferred where practical, with managed FFmpeg transcoding when needed. Resolution and child processes are cancelled/cleaned up on skip, stop, disconnect, failure, and shutdown.
 
-const engine = createKairoMusicEngine({
-  musicBrainz: { contact: 'https://your-project.example/contact' },
-});
+### Current limitations
 
-const result = await engine.parse({
-  input: 'Daft Punk One More Time',
-  guildId: 'guild-id',
-  requestedBy: 'user-id',
-  preferredProvider: 'musicbrainz',
-});
+- Provider permissions, quotas, regional availability, and extractor changes can prevent metadata lookup or playback. Spotify playlist access depends on the app/account permissions and resource availability.
+- `/seek` supports seekable local/file sources. Current yt-dlp pipes and live sources are non-seekable and return a safe error. Player progress comes from engine playback state and freezes while paused.
+- UNO uses a bounded ruleset: numeric starting discard, draw actions pass the turn, and no Wild Draw Four challenges or jump-in. Draw-two stacking and draw-until-playable are optional settings.
+- Active games and playback sessions are in memory; durable libraries, settings, history, and game results survive restarts.
+
+## Run locally
+
+### Requirements
+
+- Node.js **24.17.0 or newer** and pnpm **10** (the workspace pins `pnpm@10.0.0`).
+- MongoDB, either local or hosted.
+- A Discord application/bot token, application ID, and a development guild for testing.
+- yt-dlp, FFmpeg, and ffprobe available on `PATH`, or configured executable paths.
+- Bot permissions to use commands, send responses, and connect/speak in voice channels.
+
+From the repository root:
+
+```sh
+pnpm install --frozen-lockfile
 ```
 
-The adapter uses MusicBrainz's documented JSON API and its rate limit guidance. It returns metadata only; no MusicBrainz audio stream is available through this adapter. See the [MusicBrainz API](https://musicbrainz.org/doc/MusicBrainz_API), [search documentation](https://musicbrainz.org/doc/MusicBrainz_API/Search), and [rate limits](https://musicbrainz.org/doc/MusicBrainz_API/Rate_Limiting).
+Copy `.env.example` to `.env` and configure at least:
 
-## Queue and fixture playback
+```env
+DISCORD_TOKEN=your-bot-token
+DISCORD_CLIENT_ID=your-application-id
+DISCORD_DEV_GUILD_ID=your-development-guild-id
+MONGODB_URI=mongodb://localhost:27017/kairo
+```
 
-The public engine API supports enqueue, queue snapshots, skip, stop, clear, remove, move, shuffle, repeat, previous, voice connection, pause, resume, and playback snapshots. Queue and playback implementation types remain private to the engine. For development, `fixtureAudio` maps explicit fixture track IDs to Opus packets or a local file. Already compatible Opus streams bypass FFmpeg; other declared local inputs use a managed FFmpeg process. Set `ffmpegPath` when FFmpeg is outside `PATH`.
+Keep `.env` private; it is ignored by Git. Only supply provider credentials needed for the providers/resources you use. `.env.example` includes queue/collection limits, timeouts, caching, logging, and executable paths (`YT_DLP_PATH`, `FFMPEG_PATH`, `FFPROBE_PATH`). `KAIRO_DEVELOPER_IDS` configures additional developer-only access.
 
-The bot registers `/play`, `/pause`, `/resume`, `/skip`, `/stop`, `/disconnect`, `/queue`, `/ping`, `/settings`, `/help`, `/info`, and `/auditlog`. Set `DISCORD_DEV_GUILD_ID` for development-guild registration and run the built bot with `node apps/bot/dist/index.js`. `/auditlog` is available to the application owner and IDs in `KAIRO_DEVELOPER_IDS`; its bounded in-memory history resets when the bot restarts.
+```sh
+pnpm build
+node apps/bot/dist/index.js
+```
 
-For the Phase 6 voice smoke path, set `KAIRO_FIXTURE_AUDIO_PATH` to a local audio file, join a voice channel, then run `/play https://fixture.kairo.invalid/tracks/demo`. Set `KAIRO_FIXTURE_AUDIO_INPUT_TYPE=ogg/opus` or `webm/opus` only when the file really contains that format; those inputs bypass FFmpeg. Other local formats need FFmpeg. The bot must be allowed to connect and speak in that channel. `/info <query>` resolves metadata without joining voice or queueing.
+Startup registers commands in `DISCORD_DEV_GUILD_ID` when configured. Join a voice channel and try `/play <query>`. The queue acknowledgement can arrive before stream startup completes; inspect structured playback logs if audio fails.
 
-Production `/play` uses yt-dlp for public YouTube audio. Spotify and MusicBrainz metadata first searches YouTube and must pass the candidate matcher; YouTube tracks reuse their video ID. Install yt-dlp and FFmpeg on the bot host, or use the Docker image. `YT_DLP_PATH` selects the executable. `/settings audio_quality` stores a guild's `low`, `medium`, `high` (default), or `best` quality; the next track reads the current setting. `KAIRO_METADATA_PROVIDER` selects the metadata search provider (default `youtube-sr`), while `KAIRO_PLAYABLE_SEARCH_PROVIDER` selects the YouTube candidate adapter (default `youtube-sr`). `/info` resolves metadata without playback.
+For Spotify playlist access requiring a user grant:
 
-`/play` acknowledges the queue before stream startup finishes. If the bot joins voice but stays silent, inspect its structured `Playback failed` log code and verify `YT_DLP_PATH` and `FFMPEG_PATH` resolve to runnable executables. The logs do not include extractor payloads or signed media URLs.
+```sh
+pnpm spotify:authorize
+```
+
+This helper saves the refresh token in the local `.env`. Authorization does not override provider access restrictions.
+
+### Global command registration
+
+```sh
+pnpm commands:global
+```
+
+This builds the workspace and bulk-replaces the application's global command definitions using the handler's command list, including aliases and context menus. It requires `DISCORD_TOKEN` and `DISCORD_CLIENT_ID`; deployment itself does not require MongoDB or voice. Registration publishes definitions; the bot process must still be running to execute commands.
+
+### Docker
+
+The Dockerfile builds the workspace and includes FFmpeg/ffprobe and a pinned yt-dlp installation:
+
+```sh
+docker build -t kairo .
+docker run --rm --env-file .env kairo
+```
+
+Use a MongoDB URI reachable from the container; `localhost` inside the container refers to the container itself.
+
+## Command overview
+
+Use `/help` for current descriptions, options, aliases, and permission-aware command visibility.
+
+| Category  | Commands                                                                                                                                                                                                         |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Music     | `/play`, `/playnext`, `/shuffle`, `/player`, `/pause`, `/resume`, `/skip`, `/stop`, `/disconnect`, `/queue`, `/seek`, `/volume`, `/repeat`, `/filter`, `/autoplay`, `/vote`, `/history`, `/lyrics`, `/recommend` |
+| Library   | `/playlist`, `/liked`, `/like`, `/dislike`, `/menu`                                                                                                                                                              |
+| Utility   | `/ping`, `/help`, `/info` (alias `/search`), `/settings`, `/stats`, `/top`, `/discover`                                                                                                                          |
+| Games     | `/games`, `/rps`, `/hangman`, `/uno`, `/musictrivia`                                                                                                                                                             |
+| Developer | `/auditlog`                                                                                                                                                                                                      |
+
+`/playlist` manages creation, deletion, listing, inspection, editing, imports, and playback. `/liked` provides `list`, `play`, and confirmed `clear`; `/like` and `/dislike` accept a query or use the current track. `/info <query> [searchs]` accepts 1-25 results; `/search` uses the same command implementation with a larger default result count.
+
+Message context actions include **Play Song**, **Search Music**, **Add to Queue**, **Play Next**, and **Song Info**. Developer commands enforce authorization during execution, not just through visibility. Internal failures are logged with structured diagnostics and mapped to safe Discord responses.
+
+## Development checks
+
+| Command             | Purpose                                                      |
+| ------------------- | ------------------------------------------------------------ |
+| `pnpm format`       | Apply Prettier formatting                                    |
+| `pnpm format:check` | Check formatting without editing                             |
+| `pnpm lint`         | Run ESLint                                                   |
+| `pnpm typecheck`    | Check strict TypeScript types                                |
+| `pnpm test`         | Run Vitest unit, fixture, integration, and regression suites |
+| `pnpm build`        | Build workspace packages and the bot                         |
+
+Normal automated tests are offline and deterministic: mocked Discord interactions, provider fixtures, repository fixtures, and local audio exercise parsing, matching, concurrency, cleanup, commands, libraries, games, and progress/seek. Live provider and external MongoDB checks are explicitly opt-in and skipped by default; passing the offline suite does not claim a live Discord or external-service check.
