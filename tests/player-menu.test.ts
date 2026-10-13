@@ -507,7 +507,7 @@ it('renders a compact artwork section and separates transport, queue actions and
     'Volume +',
   ]);
   expect(rows.at(-1).components.map((c: { label: string }) => c.label)).toEqual(
-    ['Refresh', 'Stop', 'Close'],
+    ['Options', 'Refresh', 'Stop', 'Close'],
   );
   expect(rows[0].components[2].style).toBe(1);
   expect(
@@ -521,6 +521,47 @@ it('renders a compact artwork section and separates transport, queue actions and
   expect(JSON.parse(s.text()).components[0].accent_color).not.toBe(
     playingColor,
   );
+});
+
+it('keeps advanced controls collapsed and toggles one bottom options section', async () => {
+  const s = await setup();
+  const componentRows = () => {
+    const card = JSON.parse(s.text()).components[0];
+    return card.components.filter((c: { type: number }) => c.type === 1);
+  };
+  const labels = () =>
+    componentRows().flatMap((row: { components: { label?: string }[] }) =>
+      row.components.map((component) => component.label).filter(Boolean),
+    );
+  expect(labels()).not.toEqual(
+    expect.arrayContaining([
+      'Repeat: off',
+      'Autoplay: off',
+      'Lyrics',
+      'Discover',
+      'Seek',
+    ]),
+  );
+  expect(s.text()).not.toContain('Filter: flat');
+  await s.click('Options');
+  const advanced = componentRows().find(
+    (row: { components: { label?: string }[] }) =>
+      row.components.some((component) => component.label === 'Repeat: off'),
+  );
+  expect(advanced).toBeDefined();
+  expect(advanced!.components.map((c: { label: string }) => c.label)).toEqual([
+    'Repeat: off',
+    'Autoplay: off',
+    'Lyrics',
+    'Discover',
+    'Seek',
+  ]);
+  expect(s.text()).toContain('Filter: flat');
+  await s.click('Options');
+  expect(labels()).not.toEqual(
+    expect.arrayContaining(['Lyrics', 'Discover', 'Seek']),
+  );
+  expect(s.text()).not.toContain('Filter: flat');
 });
 
 it('renders ten compact single-line queue entries, explicit totals and a plain Stop button', async () => {

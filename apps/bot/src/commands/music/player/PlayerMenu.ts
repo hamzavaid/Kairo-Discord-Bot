@@ -35,6 +35,7 @@ const actions = new Set([
   'stop',
   'like',
   'add',
+  'options',
   'refresh',
   'close',
   'queue-prev',
@@ -73,6 +74,7 @@ export class PlayerMenu {
     page: 1,
     active: true,
     busy: false,
+    optionsOpen: false,
     liked: new Set(),
   };
   private readonly liked = new Set<string>();
@@ -320,6 +322,10 @@ export class PlayerMenu {
     await i.deferUpdate();
     await this.load();
     delete this.state.notice;
+    if (action.name === 'options') {
+      this.state.optionsOpen = !this.state.optionsOpen;
+      return;
+    }
     if (
       trackActions.has(action.name) &&
       action.generation !== this.data.queue.generation

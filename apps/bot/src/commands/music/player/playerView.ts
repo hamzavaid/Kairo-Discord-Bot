@@ -37,6 +37,7 @@ export interface PlayerViewState {
   page: number;
   active: boolean;
   busy: boolean;
+  optionsOpen: boolean;
   liked: ReadonlySet<string>;
   notice?: string;
 }
@@ -70,6 +71,7 @@ const icons: Record<string, string> = {
   close: '\u2716\ufe0f',
   'queue-prev': '\u2b05\ufe0f',
   'queue-next': '\u27a1\ufe0f',
+  options: '\u2699\ufe0f',
 };
 function sourceName(provider: string): string {
   if (provider === 'youtube-sr' || provider === 'youtube-api') return 'YouTube';
@@ -178,34 +180,6 @@ export function playerView(
       controls('volume-up', 'Volume +'),
     ),
   );
-  card.addActionRowComponents(
-    new ActionRowBuilder<ButtonBuilder>().addComponents(
-      controls('repeat', `Repeat: ${queue.repeatMode}`),
-      controls('autoplay', `Autoplay: ${data.autoplay ? 'on' : 'off'}`),
-      controls('lyrics', 'Lyrics', !current || !data.lyricsAvailable),
-    ),
-  );
-  card.addActionRowComponents(
-    new ActionRowBuilder<ButtonBuilder>().addComponents(
-      controls('discover', 'Discover', !data.discoveryAvailable),
-      controls('seek', 'Seek', !current || !playback.seekable),
-    ),
-  );
-  card.addActionRowComponents(
-    new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-      new StringSelectMenuBuilder()
-        .setCustomId(`${prefix}:filter:${queue.generation}`)
-        .setPlaceholder(`Filter: ${playback.filter ?? 'flat'} (next tracks)`)
-        .setDisabled(!state.active || state.busy)
-        .addOptions(
-          ...FILTER_PRESETS.map((value) => ({
-            label: value,
-            value,
-            default: value === (playback.filter ?? 'flat'),
-          })),
-        ),
-    ),
-  );
   const lines = queue.upcoming.slice((page - 1) * 10, page * 10).map(
     (entry, offset) =>
       `**${String((page - 1) * 10 + offset + 1).padStart(2, '0')}** ${heading(entry.track, 40)}  \`${entry.track.isLive ? 'Live' : duration(entry.track.durationMs)}\` \u00b7 ${entry.track.artists
@@ -248,10 +222,42 @@ export function playerView(
     card.addTextDisplayComponents(
       new TextDisplayBuilder().setContent(`-# ${uiText(state.notice, 150)}`),
     );
+  if (state.optionsOpen) {
+    card.addActionRowComponents(
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        controls('repeat', `Repeat: ${queue.repeatMode}`),
+        controls('autoplay', `Autoplay: ${data.autoplay ? 'on' : 'off'}`),
+        controls('lyrics', 'Lyrics', !current || !data.lyricsAvailable),
+        controls('discover', 'Discover', !data.discoveryAvailable),
+        controls('seek', 'Seek', !current || !playback.seekable),
+      ),
+    );
+    card.addActionRowComponents(
+      new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`${prefix}:filter:${queue.generation}`)
+          .setPlaceholder(`Filter: ${playback.filter ?? 'flat'} (next tracks)`)
+          .setDisabled(!state.active || state.busy)
+          .addOptions(
+            ...FILTER_PRESETS.map((value) => ({
+              label: value,
+              value,
+              default: value === (playback.filter ?? 'flat'),
+            })),
+          ),
+      ),
+    );
+  }
   card
     .addSeparatorComponents(new SeparatorBuilder())
     .addActionRowComponents(
       new ActionRowBuilder<ButtonBuilder>().addComponents(
+        controls(
+          'options',
+          'Options',
+          false,
+          state.optionsOpen ? ButtonStyle.Primary : ButtonStyle.Secondary,
+        ),
         controls('refresh', 'Refresh'),
         controls(
           'stop',

@@ -61,6 +61,8 @@ it('shared player admits another listener and exposes one actor-specific like to
   const rendered = JSON.stringify(editReply.mock.calls);
   expect(rendered).toContain('Like/Unlike');
   expect(rendered.match(/Like\/Unlike/gu)).toHaveLength(1);
+  expect(rendered).toContain('Options');
+  expect(rendered).not.toContain('Lyrics');
   const click = (action: string) => ({
     customId: `kairo:player:shared:${action}:1`,
     guildId: 'g',
@@ -85,7 +87,11 @@ it('shared player admits another listener and exposes one actor-specific like to
   await vi.waitFor(() =>
     expect(toggleLikeSaved).toHaveBeenCalledWith('bob', libraryTrack),
   );
-  const text = JSON.stringify(editReply.mock.calls);
+  collector.emit('collect', click('options'));
+  await vi.waitFor(() =>
+    expect(JSON.stringify(editReply.mock.calls.at(-1))).toContain('Lyrics'),
+  );
+  const text = JSON.stringify(editReply.mock.calls.at(-1));
   expect(text).toContain('Lyrics');
   expect(text).toContain('Volume');
   expect(text).toContain('Repeat');

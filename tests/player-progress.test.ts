@@ -40,7 +40,13 @@ function render(live = false, unknown = false) {
       },
       autoplay: true,
     } as never,
-    { active: true, busy: false, page: 1, liked: new Set() } as never,
+    {
+      active: true,
+      busy: false,
+      optionsOpen: true,
+      page: 1,
+      liked: new Set(),
+    } as never,
     'kairo:player:i',
     true,
   );
@@ -117,6 +123,7 @@ it('keeps a fully populated seek/progress player within 40 components and 4000 t
         {
           active: true,
           busy: false,
+          optionsOpen: true,
           page: 1,
           liked: new Set(),
           notice: 'Changed.',
