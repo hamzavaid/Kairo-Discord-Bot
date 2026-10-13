@@ -21,7 +21,8 @@ it.each([401, 403])(
       const path = new URL(String(input)).pathname;
       if (path.endsWith('/token'))
         return json({ access_token: 'secret-access', expires_in: 3600 });
-      if (path.endsWith(`/playlists/${id}`)) return json({ name: 'Mix' });
+      if (path.endsWith(`/playlists/${id}`))
+        return json({ name: 'Mix', public: true });
       return new Response('secret-provider-response', { status });
     });
     const engine = createKairoMusicEngine({
@@ -68,8 +69,8 @@ it('uses configured user refresh authorization, caches access tokens and retains
         'Bearer user-access',
       );
       if (url.pathname.endsWith(`/playlists/${id}`)) {
-        expect(url.searchParams.get('fields')).toBe('name');
-        return json({ name: 'Mix' });
+        expect(url.searchParams.get('fields')).toBe('name,public');
+        return json({ name: 'Mix', public: true });
       }
       return json({
         items: [
@@ -98,7 +99,7 @@ it('uses configured user refresh authorization, caches access tokens and retains
   try {
     expect(await engine.parse(request)).toMatchObject({
       kind: 'collection',
-      collection: { tracks: [{ title: 'Song' }] },
+      collection: { visibility: 'public', tracks: [{ title: 'Song' }] },
     });
     expect(
       fetcher.mock.calls.filter(([url]) => String(url).includes('/api/token')),
@@ -133,7 +134,8 @@ it('refreshes a rejected user access token once and persists replacement refresh
         refresh_token: `rotated-${tokenCalls}`,
         expires_in: 3600,
       });
-    if (path.endsWith(`/playlists/${id}`)) return json({ name: 'Mix' });
+    if (path.endsWith(`/playlists/${id}`))
+      return json({ name: 'Mix', public: true });
     if (++itemCalls === 1) return new Response('', { status: 401 });
     return json({
       items: [

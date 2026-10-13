@@ -30,6 +30,7 @@ export interface MediaProvider {
 }
 
 export interface ProviderCollection {
+  visibility?: 'public' | 'private' | 'unlisted';
   title: string;
   tracks: ProviderTrack[];
   total: number;

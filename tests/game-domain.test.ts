@@ -212,3 +212,41 @@ describe('shared game domain', () => {
     expect(game.view().phase).toBe('finished');
   });
 });
+
+it('does not disclose trivia correctness through scores before round resolution', () => {
+  const game = new GameSession({
+    id: 'privacy',
+    guildId: 'g',
+    channelId: 'c',
+    hostId: 'a',
+    kind: 'musictrivia',
+    tracks,
+    rounds: 1,
+    now: 0,
+  });
+  game.join('b');
+  game.start('a', 1);
+  game.act(
+    'a',
+    { type: 'guess', text: tracks[0]!.title },
+    game.view().revision,
+    2,
+  );
+  expect(game.view().scores.a).toBe(0);
+});
+it('records a completed Hangman loss without awarding winners', () => {
+  const game = new GameSession({
+    id: 'loss',
+    guildId: 'g',
+    channelId: 'c',
+    hostId: 'a',
+    kind: 'hangman',
+    word: 'Music',
+    now: 0,
+  });
+  game.start('a', 1);
+  for (const text of ['a', 'b', 'd', 'e', 'f', 'g'])
+    game.act('a', { type: 'guess', text }, game.view().revision, 2);
+  expect(game.view().phase).toBe('finished');
+  expect(game.results()[0]?.wins).toBe(0);
+});

@@ -1,3 +1,4 @@
+import type { GameService } from '../services/GameService.js';
 import type { DiscoveryService } from '../services/DiscoveryService.js';
 import type { QueueControlService } from '../services/QueueControlService.js';
 import type { PlaybackControlService } from '../services/PlaybackControlService.js';
@@ -15,9 +16,11 @@ import type { MusicService } from '../services/MusicService.js';
 import type { LibraryService } from '../services/LibraryService.js';
 import type { AuditLog } from './AuditLog.js';
 
-export type CommandCategory = 'Music' | 'Library' | 'Utility' | 'Developer';
+export type CommandCategory =
+  'Music' | 'Library' | 'Utility' | 'Developer' | 'Games';
 
 export interface CommandServices {
+  games?: GameService;
   music: MusicService;
   audit: AuditLog;
   settings: GuildSettingsRepository;
@@ -68,6 +71,17 @@ export interface MessageCommand {
   developerOnly?: boolean;
   execute(
     interaction: import('discord.js').MessageContextMenuCommandInteraction,
+    context: CommandExecutionContext,
+  ): Promise<void>;
+}
+
+export interface UserCommand {
+  data: import('discord.js').ContextMenuCommandBuilder;
+  category: CommandCategory;
+  usage: string;
+  developerOnly?: boolean;
+  execute(
+    interaction: import('discord.js').UserContextMenuCommandInteraction,
     context: CommandExecutionContext,
   ): Promise<void>;
 }

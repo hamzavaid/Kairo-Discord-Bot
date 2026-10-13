@@ -930,6 +930,7 @@ export function createKairoMusicEngine(
             collection: {
               id: `${provider.id}:${classified.sourceId}`,
               title: value.title,
+              ...(value.visibility ? { visibility: value.visibility } : {}),
               sourceProvider: provider.id,
               sourceId: classified.sourceId,
               canonicalUrl: classified.canonicalUrl,

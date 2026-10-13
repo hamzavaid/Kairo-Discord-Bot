@@ -384,7 +384,10 @@ export class GameSession {
         if (good) {
           this.metric(user).roundsWon++;
           this.end('finished');
-        } else this.end('abandoned');
+        } else {
+          this.end('finished');
+          this.winners = [];
+        }
       }
     } else {
       requireGame(
@@ -526,10 +529,7 @@ export class GameSession {
   private beforeRound = new Map<string, number>();
   tick(now: number) {
     if (this.phase === 'finished' || this.phase === 'abandoned') return;
-    if (
-      now - (this.started || this.options.now) >=
-      (this.options.lifetimeMs ?? 900000)
-    ) {
+    if (now - this.options.now >= (this.options.lifetimeMs ?? 900000)) {
       this.end('abandoned');
       return;
     }
@@ -572,7 +572,12 @@ export class GameSession {
       round: this.round,
       players: [...this.players],
       spectators: [...this.spectators],
-      scores: Object.fromEntries(this.scores),
+      scores: Object.fromEntries(
+        this.options.kind === 'musictrivia' &&
+          ['active', 'preparing'].includes(this.phase)
+          ? this.players.map((p) => [p, this.beforeRound.get(p) ?? 0])
+          : this.scores,
+      ),
       deadline: this.deadline,
       winners: [...this.winners],
       ...(this.reveal ? { reveal: this.reveal } : {}),

@@ -1,3 +1,10 @@
+import { GameError } from '@kairo/games';
+import gamesCommand from './games/games.js';
+import rpsCommand from './games/rps.js';
+import hangmanCommand from './games/hangman.js';
+import unoCommand from './games/uno.js';
+import musictriviaCommand from './games/musictrivia.js';
+import inviteToGameCommand from './context/InviteToGame.js';
 import discoverCommand from './utility/discover.js';
 import PlaySongCommand from './context/PlaySong.js';
 import SearchMusicCommand from './context/SearchMusic.js';
@@ -19,6 +26,7 @@ import {
   Routes,
   type ChatInputCommandInteraction,
   type MessageContextMenuCommandInteraction,
+  type UserContextMenuCommandInteraction,
   type RESTPostAPIContextMenuApplicationCommandsJSONBody,
   type RESTPostAPIChatInputApplicationCommandsJSONBody,
 } from 'discord.js';
@@ -42,6 +50,7 @@ import type {
   CommandServices,
   SlashCommand,
   MessageCommand,
+  UserCommand,
 } from './types.js';
 import type { PlaybackAction } from '../services/PlaybackPolicyService.js';
 import helpCommand from './utility/help.js';
@@ -79,6 +88,8 @@ export interface CommandRegistrationTransport {
 }
 
 function safeFailure(error: unknown): { code: string; message: string } {
+  if (error instanceof GameError)
+    return { code: error.code, message: error.message };
   if (error instanceof LibraryError)
     return { code: error.code, message: error.message };
   if (error instanceof CommandError)
@@ -87,6 +98,9 @@ function safeFailure(error: unknown): { code: string; message: string } {
   if (error instanceof MusicError) {
     const messages: Partial<Record<MusicError['code'], string>> = {
       QUEUE_EMPTY: 'The queue is empty.',
+      PLAYBACK_OWNED:
+        'Music Trivia owns voice playback. End the game first, or stop/empty normal music before starting trivia.',
+      PREVIEW_EXPIRED: 'The music preview session has expired.',
       QUEUE_ENTRY_NOT_FOUND:
         'That queue entry is no longer upcoming. Refresh the queue.',
       NO_SEARCH_RESULTS: 'No matching song was found.',
@@ -184,6 +198,11 @@ const builtInCommands: readonly SlashCommand[] = [
   lyricsCommand,
   voteCommand,
   discoverCommand,
+  gamesCommand,
+  rpsCommand,
+  hangmanCommand,
+  unoCommand,
+  musictriviaCommand,
 ];
 
 const builtInMessageCommands: readonly MessageCommand[] = [
@@ -197,16 +216,24 @@ export type ApplicationCommandDefinition =
   | RESTPostAPIChatInputApplicationCommandsJSONBody
   | RESTPostAPIContextMenuApplicationCommandsJSONBody;
 type ExecutableInteraction =
-  ChatInputCommandInteraction | MessageContextMenuCommandInteraction;
+  | ChatInputCommandInteraction
+  | MessageContextMenuCommandInteraction
+  | UserContextMenuCommandInteraction;
 function isMessageInteraction(
   i: ExecutableInteraction,
 ): i is MessageContextMenuCommandInteraction {
   return i.isMessageContextMenuCommand?.() === true;
 }
 /** Build deployment payloads without constructing runtime services. */
+function isUserInteraction(
+  i: ExecutableInteraction,
+): i is UserContextMenuCommandInteraction {
+  return i.isUserContextMenuCommand?.() === true;
+}
 export function commandRegistrationData(
   commands: readonly SlashCommand[] = builtInCommands,
-  messageCommands: readonly MessageCommand[] = commands === builtInCommands
+  messageCommands: readonly (MessageCommand | UserCommand)[] = commands ===
+  builtInCommands
     ? builtInMessageCommands
     : [],
 ): ApplicationCommandDefinition[] {
@@ -250,11 +277,13 @@ export function commandRegistrationData(
 }
 
 export class SlashCommandHandler {
+  readonly userCommands = new Collection<string, UserCommand>();
   readonly messageCommands = new Collection<string, MessageCommand>();
   readonly commands = new Collection<string, SlashCommand>();
   private readonly nicknames = new Map<string, SlashCommand>();
 
   constructor(private readonly options: SlashCommandHandlerOptions) {
+    this.userCommands.set(inviteToGameCommand.data.name, inviteToGameCommand);
     for (const command of builtInMessageCommands)
       this.messageCommands.set(command.data.name, command);
     for (const command of builtInCommands) {
@@ -288,12 +317,14 @@ export class SlashCommandHandler {
         ...(command.nicknames ?? []),
       ]),
       ...this.messageCommands.keys(),
+      ...this.userCommands.keys(),
     ];
   }
 
   registrationData(): ApplicationCommandDefinition[] {
     return commandRegistrationData(this.list(), [
       ...this.messageCommands.values(),
+      ...this.userCommands.values(),
     ]);
   }
 
@@ -313,9 +344,11 @@ export class SlashCommandHandler {
     const commandName = interaction.commandName;
     const userId = interaction.user.id;
     const guildId = interaction.guildId ?? undefined;
-    const command = isMessageInteraction(interaction)
-      ? this.messageCommands.get(commandName)
-      : this.get(commandName);
+    const command = isUserInteraction(interaction)
+      ? this.userCommands.get(commandName)
+      : isMessageInteraction(interaction)
+        ? this.messageCommands.get(commandName)
+        : this.get(commandName);
 
     let success = false;
     let errorCode: string | undefined;
@@ -330,7 +363,7 @@ export class SlashCommandHandler {
           'You are not authorized to use this command.',
         );
 
-      if (this.options.policy && guildId) {
+      if (this.options.policy && guildId && command.category !== 'Games') {
         const controls = normalizeGuildControls(
           (await this.options.settings.get(guildId)).controls,
         );
@@ -354,6 +387,7 @@ export class SlashCommandHandler {
         ];
         const mutateSetting =
           !isMessageInteraction(interaction) &&
+          !isUserInteraction(interaction) &&
           ((name === 'volume' &&
             interaction.options.getInteger('amount') !== null) ||
             (name === 'repeat' &&
@@ -379,6 +413,7 @@ export class SlashCommandHandler {
       }
       const context: CommandExecutionContext = {
         music: this.options.music,
+        ...(this.options.games ? { games: this.options.games } : {}),
         ...(this.options.discovery
           ? { discovery: this.options.discovery }
           : {}),
@@ -432,6 +467,8 @@ export class SlashCommandHandler {
         await this.messageCommands
           .get(commandName)!
           .execute(interaction, context);
+      else if (isUserInteraction(interaction))
+        await this.userCommands.get(commandName)!.execute(interaction, context);
       else await this.get(commandName)!.execute(interaction, context);
       success = true;
     } catch (error) {

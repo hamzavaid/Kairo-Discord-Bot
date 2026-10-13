@@ -1,3 +1,4 @@
+import { GameService } from './services/GameService.js';
 import { DiscoveryService } from './services/DiscoveryService.js';
 import { QueueControlService } from './services/QueueControlService.js';
 import { PlaybackControlService } from './services/PlaybackControlService.js';
@@ -100,6 +101,7 @@ const refreshIdle = async (guildId: string): Promise<void> => {
 };
 
 const library = new LibraryService(database.library, music);
+const games = new GameService(database.games, music, library);
 const recommendations = new RecommendationService(music, history, library);
 const autoplay = new AutoplayService(
   engine,
@@ -122,6 +124,7 @@ const policy = new PlaybackPolicyService();
 const controls = new PlaybackControlService(music, database.repository, policy);
 const commandHandler = createSlashCommandHandler({
   music,
+  games,
   history,
   statistics: new StatisticsService(database.history, database.library),
   policy,
@@ -201,7 +204,8 @@ client.once(Events.ClientReady, async () => {
 client.on(Events.InteractionCreate, (interaction) => {
   if (
     !interaction.isChatInputCommand() &&
-    !interaction.isMessageContextMenuCommand()
+    !interaction.isMessageContextMenuCommand() &&
+    !interaction.isUserContextMenuCommand()
   )
     return;
 
@@ -223,6 +227,7 @@ async function close(): Promise<void> {
   closing = true;
   idle.shutdown();
   controls.votes.clear();
+  await games.close();
   await autoplay.close();
   await engine.shutdown();
   await history.close();

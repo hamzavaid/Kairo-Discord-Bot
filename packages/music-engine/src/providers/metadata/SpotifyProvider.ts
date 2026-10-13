@@ -232,10 +232,13 @@ export class SpotifyProvider implements MediaProvider {
   ): Promise<ProviderCollection> {
     const base = `${input.resourceType === 'album' ? 'albums' : 'playlists'}/${input.sourceId}`;
     const metadata = z
-      .object({ name: z.string().min(1) })
+      .object({
+        name: z.string().min(1),
+        public: z.boolean().nullable().optional(),
+      })
       .safeParse(
         await this.request(
-          `${base}?fields=name`,
+          `${base}?fields=name,public`,
           signal,
           `${input.resourceType}-metadata`,
         ),
@@ -344,6 +347,11 @@ export class SpotifyProvider implements MediaProvider {
       if (!items.length || !page.next || offset >= total) break;
     }
     return {
+      ...(input.resourceType === 'album' || metadata.data.public === true
+        ? { visibility: 'public' as const }
+        : metadata.data.public === false
+          ? { visibility: 'private' as const }
+          : {}),
       title: metadata.data.name,
       tracks,
       total,

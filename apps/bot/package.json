@@ -10,6 +10,7 @@
     "@kairo/data": "workspace:^",
     "@kairo/music-engine": "workspace:*",
     "@kairo/shared": "workspace:*",
-    "discord.js": "^14.27.0"
+    "discord.js": "^14.27.0",
+    "@kairo/games": "workspace:*"
   }
 }
