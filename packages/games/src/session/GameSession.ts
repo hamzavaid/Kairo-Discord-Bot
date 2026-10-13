@@ -115,7 +115,9 @@ export class GameSession {
       'The lobby is full.',
     );
     requireGame(
-      !this.options.invitedUserId || user === this.options.invitedUserId,
+      this.options.kind !== 'rps' ||
+        !this.options.invitedUserId ||
+        user === this.options.invitedUserId,
       'GAME_FORBIDDEN',
       'This challenge is reserved for the invited player.',
     );
@@ -221,12 +223,23 @@ export class GameSession {
       this.end('abandoned');
   }
   private unavailable = 0;
+  decline(user: string) {
+    requireGame(
+      this.options.kind === 'rps' &&
+        this.options.invitedUserId === user &&
+        this.phase === 'lobby',
+      'GAME_FORBIDDEN',
+      'Only the invited player can decline this pending challenge.',
+    );
+    this.end('abandoned');
+  }
   stop(user: string) {
     requireGame(
       user === this.options.hostId,
       'GAME_FORBIDDEN',
       'Only the host can end this game.',
     );
+    if (this.phase === 'finished' || this.phase === 'abandoned') return;
     this.end('abandoned');
   }
   private end(phase: 'finished' | 'abandoned') {
@@ -567,9 +580,15 @@ export class GameSession {
       id: this.options.id,
       kind: this.options.kind,
       hostId: this.options.hostId,
+      ...(this.options.invitedUserId
+        ? { invitedUserId: this.options.invitedUserId }
+        : {}),
       phase: this.phase,
       revision: this.revision,
       round: this.round,
+      ...(this.options.kind === 'musictrivia'
+        ? { roundLimit: this.options.rounds ?? 5 }
+        : {}),
       players: [...this.players],
       spectators: [...this.spectators],
       scores: Object.fromEntries(

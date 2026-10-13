@@ -3,6 +3,7 @@ import {
   GameSession,
   GameManager,
   normalizeAnswer,
+  triviaAnswer,
 } from '../packages/games/src/index.js';
 const tracks = [
   { id: 'one', title: 'Around the World', artists: ['Daft Punk'] },
@@ -249,4 +250,134 @@ it('records a completed Hangman loss without awarding winners', () => {
     game.act('a', { type: 'guess', text }, game.view().revision, 2);
   expect(game.view().phase).toBe('finished');
   expect(game.results()[0]?.wins).toBe(0);
+});
+
+it('keeps completed outcomes immutable when cleanup stops a finished game', () => {
+  const game = new GameSession({
+    id: 'done',
+    guildId: 'g',
+    channelId: 'c',
+    hostId: 'a',
+    kind: 'hangman',
+    word: 'Music',
+    now: 0,
+  });
+  game.start('a', 1);
+  game.act('a', { type: 'guess', text: 'music' }, game.view().revision, 2);
+  const results = game.results();
+  game.stop('a');
+  expect(game.view().phase).toBe('finished');
+  expect(game.results()).toEqual(results);
+});
+it('allows open multiplayer invitations while reserving RPS for the challenged user', () => {
+  const uno = new GameSession({
+    id: 'invite',
+    guildId: 'g',
+    channelId: 'c',
+    hostId: 'a',
+    kind: 'uno',
+    invitedUserId: 'b',
+    now: 0,
+  });
+  expect(() => uno.join('c')).not.toThrow();
+  const rps = new GameSession({
+    id: 'invite2',
+    guildId: 'g',
+    channelId: 'c',
+    hostId: 'a',
+    kind: 'rps',
+    invitedUserId: 'b',
+    now: 0,
+  });
+  expect(() => rps.join('c')).toThrow();
+  rps.join('b');
+});
+it.each([
+  { stackDrawTwo: false, drawUntilPlayable: false },
+  { stackDrawTwo: true, drawUntilPlayable: true },
+])(
+  'finishes seeded UNO and conserves unique cards under house rules %j',
+  (rules) => {
+    let seed = 42;
+    const random = () => {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      return seed / 4294967296;
+    };
+    const game = new GameSession({
+      id: 'complete-uno',
+      guildId: 'g',
+      channelId: 'c',
+      hostId: 'a',
+      kind: 'uno',
+      now: 0,
+      random,
+      ...rules,
+    });
+    game.join('b');
+    game.join('c');
+    game.start('a', 1);
+    for (let n = 2; n < 5000 && game.view().phase === 'active'; n++) {
+      const player = game.view().turn!;
+      let played = false;
+      for (const card of game.hand(player)) {
+        try {
+          game.act(
+            player,
+            { type: 'card', cardId: card.id, color: 'red', uno: true },
+            game.view().revision,
+            n,
+          );
+          played = true;
+          break;
+        } catch (error) {
+          expect(error).toMatchObject({ code: 'GAME_INVALID' });
+        }
+      }
+      if (!played) game.act(player, { type: 'draw' }, game.view().revision, n);
+      const ids = game
+        .view()
+        .players.flatMap((p) => game.hand(p).map((c) => c.id));
+      expect(new Set(ids).size).toBe(ids.length);
+    }
+    expect(game.view().phase).toBe('finished');
+    expect(game.view().winners).toHaveLength(1);
+    expect(game.results().filter((r) => r.wins)).toHaveLength(1);
+  },
+);
+it('matches only deterministic trivia variants and rewards partial combined answers predictably', () => {
+  const track = {
+    id: 'x',
+    title: 'Song (Official Audio)',
+    artists: ['Artist One', 'Artist Two'],
+  };
+  expect(
+    triviaAnswer(track, 'song', 'ARTIST-TWO', 'both', 1000, 10000),
+  ).toMatchObject({ correct: true, points: 245 });
+  expect(
+    triviaAnswer(track, 'song live', 'Artist One', 'both', 1000, 10000),
+  ).toMatchObject({
+    correct: false,
+    songCorrect: false,
+    artistCorrect: true,
+    points: 100,
+  });
+  expect(
+    triviaAnswer(track, 'song', 'wrong', 'both', 1000, 10000),
+  ).toMatchObject({ correct: false, points: 100 });
+});
+
+it('lets only the challenged player decline a pending RPS invitation', () => {
+  const game = new GameSession({
+    id: 'decline',
+    guildId: 'g',
+    channelId: 'c',
+    hostId: 'a',
+    kind: 'rps',
+    invitedUserId: 'b',
+    now: 0,
+  });
+  expect(() => game.decline('stranger')).toThrow();
+  game.decline('b');
+  expect(game.view().phase).toBe('abandoned');
+  expect(game.results()).toEqual([]);
 });

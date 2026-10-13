@@ -53,9 +53,11 @@ export interface GameView {
   id: string;
   kind: GameKind;
   hostId: string;
+  invitedUserId?: string;
   phase: GamePhase;
   revision: number;
   round: number;
+  roundLimit?: number;
   players: string[];
   spectators: string[];
   scores: Record<string, number>;

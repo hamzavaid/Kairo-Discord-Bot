@@ -96,6 +96,7 @@ describe('game services and canonical trivia boundary', () => {
       'host',
       { type: 'guess', text: track.title },
       game.view().revision,
+      'voice',
     );
     expect(music.stopPreview).toHaveBeenCalled();
     advance(4000);
@@ -135,4 +136,139 @@ describe('game services and canonical trivia boundary', () => {
     expect(music.acquirePreview).not.toHaveBeenCalled();
     await service.close();
   });
+});
+
+it('rejects source preparation completed after shutdown instead of creating an orphan session', async () => {
+  const { service, music } = setup();
+  let finish!: (tracks: (typeof libraryTrack)[]) => void;
+  music.infoResults.mockImplementationOnce(
+    () =>
+      new Promise((r) => {
+        finish = r;
+      }),
+  );
+  const pending = service.create({
+    guildId: 'g',
+    channelId: 'c',
+    hostId: 'h',
+    kind: 'musictrivia',
+  });
+  await vi.waitFor(() => expect(music.infoResults).toHaveBeenCalled());
+  await service.close();
+  finish([libraryTrack]);
+  await expect(pending).rejects.toMatchObject({ code: 'GAME_FINISHED' });
+});
+it('requires trivia guessers to be in the preview voice channel and cleans late-round audio immediately', async () => {
+  const { service, music, advance } = setup();
+  const game = await service.create({
+    guildId: 'g',
+    channelId: 'c',
+    hostId: 'host',
+    kind: 'musictrivia',
+    rounds: 1,
+  });
+  await service.start(game, 'host', {
+    guildId: 'g',
+    channelId: 'v',
+    adapterCreator: (() => ({})) as never,
+  });
+  await expect(
+    service.act(
+      game,
+      'host',
+      { type: 'guess', text: game.triviaTrack().title },
+      game.view().revision,
+      'other',
+    ),
+  ).rejects.toMatchObject({ code: 'GAME_FORBIDDEN' });
+  advance(31000);
+  await expect(
+    service.act(
+      game,
+      'host',
+      { type: 'guess', text: 'late' },
+      game.view().revision,
+      'v',
+    ),
+  ).rejects.toThrow();
+  expect(music.stopPreview).toHaveBeenCalled();
+  await service.close();
+});
+
+it('passes only normalized game options and answer DTOs into the game domain', async () => {
+  const { service } = setup();
+  const game = await service.create({
+    guildId: 'g',
+    channelId: 'c',
+    hostId: 'h',
+    kind: 'musictrivia',
+    source: 'playlist',
+    playlist: 'Private name',
+  });
+  expect(game.options).not.toHaveProperty('playlist');
+  expect(game.options).not.toHaveProperty('source');
+  expect(game.options).not.toHaveProperty('url');
+  await service.close();
+});
+
+it('uses the configured trivia limit for omitted rounds and does not block other games', async () => {
+  const { service, repo } = setup();
+  repo.settings = async () => ({ ...DEFAULT_GAME_SETTINGS, maxRounds: 1 });
+  const trivia = await service.create({
+    guildId: 'g',
+    channelId: 'c',
+    hostId: 'h',
+    kind: 'musictrivia',
+  });
+  expect(trivia.options.rounds).toBe(1);
+  await expect(
+    service.create({
+      guildId: 'g',
+      channelId: 'other',
+      hostId: 'h',
+      kind: 'rps',
+    }),
+  ).resolves.toBeDefined();
+  await service.close();
+});
+it('drains admitted statistics writes before shutdown completes', async () => {
+  const { service, repo, advance } = setup();
+  let release!: () => void;
+  const pending = new Promise<void>((r) => {
+    release = r;
+  });
+  repo.record.mockImplementation(() => pending);
+  const game = await service.create({
+    guildId: 'g',
+    channelId: 'c',
+    hostId: 'h',
+    kind: 'rps',
+    bestOf: 1,
+  });
+  game.join('b');
+  await service.start(game, 'h');
+  await service.act(
+    game,
+    'h',
+    { type: 'rps', choice: 'rock' },
+    game.view().revision,
+  );
+  await service.act(
+    game,
+    'b',
+    { type: 'rps', choice: 'scissors' },
+    game.view().revision,
+  );
+  advance(4000);
+  const finishing = service.tick(game);
+  await vi.waitFor(() => expect(repo.record).toHaveBeenCalled());
+  let closed = false;
+  const closing = service.close().then(() => {
+    closed = true;
+  });
+  await new Promise((r) => setImmediate(r));
+  expect(closed).toBe(false);
+  release();
+  await Promise.all([finishing, closing]);
+  expect(closed).toBe(true);
 });

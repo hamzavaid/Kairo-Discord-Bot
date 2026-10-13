@@ -281,6 +281,7 @@ export function createKairoMusicEngine(
       ? {}
       : { timeoutMs: options.streamTimeoutMs },
   );
+  let closing = false;
   const previews = new Map<
     string,
     {
@@ -336,6 +337,8 @@ export function createKairoMusicEngine(
       );
   }
   function assertMusicAvailable(guildId: string) {
+    if (closing)
+      throw new MusicError('STREAM_CANCELLED', 'The engine is shutting down.');
     if (previews.has(guildId))
       throw new MusicError(
         'PLAYBACK_OWNED',
@@ -368,9 +371,14 @@ export function createKairoMusicEngine(
     previews.delete(guildId);
     value.session.disconnect();
     const connection = voice.get(guildId);
-    if (restore && value.originalConnected && connection)
-      session(guildId).attach(connection);
-    else await voice.disconnect(guildId);
+    if (restore && value.originalConnected && connection) {
+      try {
+        session(guildId).attach(connection);
+      } catch (error) {
+        await voice.disconnect(guildId);
+        throw error;
+      }
+    } else await voice.disconnect(guildId);
   }
   function session(guildId: string): PlaybackSession {
     let current = sessions.get(guildId);
@@ -703,7 +711,20 @@ export function createKairoMusicEngine(
         const defaultVolume = originalConnected
           ? (session(guildId).snapshot().volume ?? 75)
           : ((await options.playbackDefaultsForGuild?.(guildId))?.volume ?? 75);
+        validateVolume(defaultVolume);
+        if (closing)
+          throw new MusicError(
+            'STREAM_CANCELLED',
+            'The engine is shutting down.',
+          );
         const connection = await voice.connect(target);
+        if (closing) {
+          await voice.disconnect(guildId);
+          throw new MusicError(
+            'STREAM_CANCELLED',
+            'The preview was cancelled during shutdown.',
+          );
+        }
         const normal = session(guildId);
         normal.disconnect();
         const leaseId = randomUUID();
@@ -721,22 +742,38 @@ export function createKairoMusicEngine(
           ...(options.audioQualityForGuild
             ? { audioQualityForGuild: options.audioQualityForGuild }
             : {}),
-          onStateChanged: (state) => {
+          onStateChanged: (state, generation) => {
             const value = previews.get(guildId);
+            if (value?.leaseId !== leaseId) return;
             if (state === 'PLAYING' && value) {
               value.resolve?.();
               delete value.resolve;
               delete value.reject;
-              value.timer = setTimeout(
-                () => stopPreviewInternal(guildId),
-                value.durationMs,
-              );
+              value.timer = setTimeout(() => {
+                if (
+                  previews.get(guildId)?.leaseId === leaseId &&
+                  value.session.snapshot().generation === generation
+                )
+                  stopPreviewInternal(guildId);
+              }, value.durationMs);
               value.timer.unref();
             }
           },
-          onEnded: () => stopPreviewInternal(guildId),
-          onFailure: (code) => {
+          onEnded: (generation) => {
             const value = previews.get(guildId);
+            if (
+              value?.leaseId === leaseId &&
+              value.session.snapshot().generation === generation
+            )
+              stopPreviewInternal(guildId);
+          },
+          onFailure: (code, generation) => {
+            const value = previews.get(guildId);
+            if (
+              value?.leaseId !== leaseId ||
+              value.session.snapshot().generation !== generation
+            )
+              return;
             value?.reject?.(
               new MusicError(
                 code as MusicError['code'],
@@ -764,9 +801,19 @@ export function createKairoMusicEngine(
         }
         const value = previews.get(guildId)!;
         value.expiry = setTimeout(() => {
-          void lock(guildId).runExclusive(() =>
-            releasePreviewInternal(guildId),
-          );
+          void lock(guildId)
+            .runExclusive(async () => {
+              if (previews.get(guildId)?.leaseId === leaseId)
+                await releasePreviewInternal(guildId);
+            })
+            .catch(() =>
+              emit({
+                type: 'playbackFailed',
+                guildId,
+                code: 'VOICE_JOIN_ERROR',
+                generation: queues.snapshot(guildId).generation,
+              }),
+            );
         }, 900000);
         value.expiry.unref();
         return { leaseId };
@@ -1030,6 +1077,7 @@ export function createKairoMusicEngine(
       return () => bucket.delete(handler);
     },
     async shutdown() {
+      closing = true;
       for (const guildId of new Set([...sessions.keys(), ...previews.keys()])) {
         await lock(guildId).runExclusive(async () => {
           await releasePreviewInternal(guildId, false);

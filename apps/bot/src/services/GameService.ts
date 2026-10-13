@@ -37,6 +37,7 @@ interface Runtime {
   tracks: Track[];
   settings: GameSettings;
   leaseId?: string;
+  voiceChannelId?: string;
   job?: Promise<void>;
   finalized?: boolean;
 }
@@ -61,6 +62,7 @@ export class GameService {
   readonly manager = new GameManager();
   private readonly active = new Map<string, Runtime>();
   private closing = false;
+  private readonly finishing = new Set<Promise<void>>();
   constructor(
     readonly repository: GameRepository,
     private readonly music: MusicService,
@@ -77,7 +79,9 @@ export class GameService {
       'This game is disabled in this server.',
     );
     requireGame(
-      (input.rounds ?? 5) <= settings.maxRounds,
+      input.kind !== 'musictrivia' ||
+        input.rounds === undefined ||
+        input.rounds <= settings.maxRounds,
       'GAME_INVALID',
       `Choose up to ${settings.maxRounds} rounds.`,
     );
@@ -151,13 +155,29 @@ export class GameService {
         : input.difficulty === 'easy'
           ? Math.min(60, settings.answerSeconds + 15)
           : settings.answerSeconds;
+    requireGame(!this.closing, 'GAME_FINISHED', 'Games are shutting down.');
     const game = this.manager.create({
-      ...input,
+      guildId: input.guildId,
+      channelId: input.channelId,
+      hostId: input.hostId,
+      kind: input.kind,
+      ...(input.invitedUserId ? { invitedUserId: input.invitedUserId } : {}),
+      ...(input.bestOf !== undefined ? { bestOf: input.bestOf } : {}),
+      ...(input.answerMode ? { answerMode: input.answerMode } : {}),
+      ...(input.stackDrawTwo !== undefined
+        ? { stackDrawTwo: input.stackDrawTwo }
+        : {}),
+      ...(input.drawUntilPlayable !== undefined
+        ? { drawUntilPlayable: input.drawUntilPlayable }
+        : {}),
       id: randomUUID(),
       now: this.now(),
       rounds:
         input.kind === 'musictrivia'
-          ? Math.min(input.rounds ?? 5, tracks.length)
+          ? Math.min(
+              input.rounds ?? Math.min(5, settings.maxRounds),
+              tracks.length,
+            )
           : (input.rounds ?? 5),
       tracks: tracks.map((t) => ({
         id: t.id,
@@ -192,6 +212,7 @@ export class GameService {
         'GAME_INVALID',
         'Join voice before starting music trivia.',
       );
+      runtime.voiceChannelId = target.channelId;
       runtime.leaseId = (
         await this.music.acquirePreview(target, game.options.id)
       ).leaseId;
@@ -212,27 +233,46 @@ export class GameService {
     userId: string,
     action: GameAction,
     revision: number,
+    voiceChannelId?: string,
   ) {
-    game.act(userId, action, revision, this.now());
-    await this.sync(game);
+    const runtime = this.runtime(game);
+    requireGame(
+      game.options.kind !== 'musictrivia' ||
+        (!!voiceChannelId && voiceChannelId === runtime.voiceChannelId),
+      'GAME_FORBIDDEN',
+      'Join the trivia voice channel before submitting a guess.',
+    );
+    try {
+      game.act(userId, action, revision, this.now());
+    } finally {
+      await this.sync(game);
+    }
   }
   async tick(game: GameSession) {
     if (!this.active.has(game.options.id)) return;
+    if (
+      game.options.kind === 'musictrivia' &&
+      this.runtime(game).leaseId &&
+      typeof this.music.playback === 'function' &&
+      !this.music.playback(game.options.guildId).previewActive
+    )
+      game.stop(game.options.hostId);
     game.tick(this.now());
+    await this.sync(game);
+  }
+  async decline(game: GameSession, userId: string) {
+    game.decline(userId);
     await this.sync(game);
   }
   async stop(game: GameSession, userId: string) {
     game.stop(userId);
-    await this.sync(game);
+    if (this.active.has(game.options.id)) await this.sync(game);
   }
-  private async sync(game: GameSession) {
-    const runtime = this.runtime(game);
-    const phase = game.view().phase;
-    if (phase === 'reveal' && runtime.leaseId)
-      await this.music.stopPreview(game.options.guildId, runtime.leaseId);
-    if (phase === 'finished' || phase === 'abandoned') {
-      if (runtime.finalized) return;
-      runtime.finalized = true;
+  private async finish(runtime: Runtime) {
+    if (runtime.finalized) return;
+    runtime.finalized = true;
+    const game = runtime.game;
+    const work = (async () => {
       try {
         if (runtime.leaseId) {
           await this.music.releasePreview(
@@ -250,6 +290,21 @@ export class GameService {
         runtime.finalized = false;
         throw error;
       }
+    })();
+    this.finishing.add(work);
+    try {
+      await work;
+    } finally {
+      this.finishing.delete(work);
+    }
+  }
+  private async sync(game: GameSession) {
+    const runtime = this.runtime(game);
+    const phase = game.view().phase;
+    if (phase === 'reveal' && runtime.leaseId)
+      await this.music.stopPreview(game.options.guildId, runtime.leaseId);
+    if (phase === 'finished' || phase === 'abandoned') {
+      await this.finish(runtime);
       return;
     }
     if (phase !== 'preparing' || !runtime.leaseId) return;
@@ -297,16 +352,24 @@ export class GameService {
     for (const fn of this.closers) fn();
     this.closers.clear();
     const active = [...this.active.values()];
-    await Promise.all(
+    const cleanup = await Promise.allSettled(
       active.map(async (r) => {
         r.game.stop(r.game.options.hostId);
-        if (r.leaseId)
-          await this.music.releasePreview(r.game.options.guildId, r.leaseId);
-        await r.job;
-        this.manager.release(r.game);
+        try {
+          if (r.leaseId)
+            await this.music.releasePreview(r.game.options.guildId, r.leaseId);
+          await r.job;
+        } finally {
+          this.manager.release(r.game);
+        }
       }),
     );
+    const persisted = await Promise.allSettled([...this.finishing]);
     this.active.clear();
+    const failed = [...cleanup, ...persisted].find(
+      (r) => r.status === 'rejected',
+    );
+    if (failed?.status === 'rejected') throw failed.reason;
   }
 }
 export { GameError };

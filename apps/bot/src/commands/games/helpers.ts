@@ -32,7 +32,9 @@ export async function createGame(
       : {}),
     ...(kind === 'musictrivia'
       ? {
-          rounds: i.options.getInteger('rounds') ?? 5,
+          ...(i.options.getInteger('rounds') !== null
+            ? { rounds: i.options.getInteger('rounds')! }
+            : {}),
           answerMode: (i.options.getString('answer') ?? 'song') as
             'song' | 'artist' | 'both',
           source: (i.options.getString('source') ?? 'catalog') as

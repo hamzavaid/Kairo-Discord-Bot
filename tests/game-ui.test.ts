@@ -1,3 +1,5 @@
+import { MessageFlags } from 'discord.js';
+import { GameError } from '@kairo/games';
 import { createSlashCommandHandler } from '../apps/bot/src/commands/slashCommandHandler.js';
 import { AuditLog } from '../apps/bot/src/commands/AuditLog.js';
 import { EventEmitter } from 'node:events';
@@ -116,5 +118,37 @@ it('routes user game invitations through handler authorization and safe auditing
     command: 'Invite to Game',
     success: false,
     errorCode: 'GAME_INVALID',
+  });
+});
+
+it('reports errors after a Components V2 response as safe follow-ups instead of invalid content edits', async () => {
+  const handler = createSlashCommandHandler({
+    music: {},
+    settings: {},
+    audit: new AuditLog(),
+    developerIds: new Set(),
+  } as never);
+  const original = handler.get('games')!;
+  handler.commands.set('games', {
+    ...original,
+    execute: async () => {
+      throw new GameError('GAME_INVALID', 'A safe game error.');
+    },
+  });
+  const editReply = vi.fn(),
+    followUp = vi.fn();
+  await handler.execute({
+    commandName: 'games',
+    guildId: 'g',
+    user: { id: 'u' },
+    deferred: true,
+    replied: true,
+    editReply,
+    followUp,
+  } as never);
+  expect(editReply).not.toHaveBeenCalled();
+  expect(followUp).toHaveBeenCalledWith({
+    content: 'A safe game error.',
+    flags: MessageFlags.Ephemeral,
   });
 });

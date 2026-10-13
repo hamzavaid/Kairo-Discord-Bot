@@ -38,7 +38,8 @@ export function gameCard(view: GameView, closed = false) {
       .setDisabled(done || disabled);
   const details = [
     `## Kairo ${view.kind === 'musictrivia' ? 'Music Trivia' : view.kind.toUpperCase()}`,
-    `**${view.phase}** | Round ${view.round || '-'} | <t:${Math.floor(view.deadline / 1000)}:R>`,
+    `**${view.phase}** | Round ${view.round || '-'}${view.roundLimit ? `/${view.roundLimit}` : ''} | <t:${Math.floor(view.deadline / 1000)}:R>`,
+    ...(view.invitedUserId ? [`Invited: <@${view.invitedUserId}>`] : []),
     `Players: ${view.players.map((p) => `<@${p}>`).join(', ')} | Spectators: ${view.spectators.length}`,
     ...(view.table
       ? [
@@ -66,6 +67,9 @@ export function gameCard(view: GameView, closed = false) {
           button('join', 'Join'),
           button('start', 'Start'),
           button('spectate', 'Spectate'),
+          ...(view.kind === 'rps' && view.invitedUserId
+            ? [button('decline', 'Decline invite')]
+            : []),
         ]
       : view.kind === 'rps'
         ? [
@@ -188,6 +192,7 @@ export class GameMenu {
         !!action &&
         [
           'join',
+          'decline',
           'start',
           'spectate',
           'end',
@@ -307,6 +312,8 @@ export class GameMenu {
                   : {}),
               },
           revision,
+          submitted.guild?.voiceStates.cache.get(submitted.user.id)
+            ?.channelId ?? undefined,
         );
         await submitted.editReply({
           content:
@@ -325,7 +332,8 @@ export class GameMenu {
       return;
     }
     await i.deferUpdate();
-    if (action === 'join') this.game.join(i.user.id);
+    if (action === 'decline') await games.decline(this.game, i.user.id);
+    else if (action === 'join') this.game.join(i.user.id);
     else if (action === 'spectate') this.game.spectate(i.user.id);
     else if (action === 'start')
       await games.start(

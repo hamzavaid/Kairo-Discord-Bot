@@ -364,6 +364,59 @@ export class PlaybackSession {
     this.filter = filter;
     return this.snapshot();
   }
+  private async waitForSeekAudio(resource: AudioResource, signal: AbortSignal) {
+    const stream = resource.playStream;
+    // Alternate test transports may provide DTO-only resources; real voice resources always have this stream.
+    if (!stream) return;
+    if (signal.aborted)
+      throw new MusicError('STREAM_CANCELLED', 'Seek was cancelled.');
+    if (stream.readableLength > 0) return;
+    if (stream.destroyed || stream.readableEnded)
+      throw new MusicError(
+        'STREAM_UNAVAILABLE',
+        'The seek replacement has no audio.',
+      );
+    await new Promise<void>((resolve, reject) => {
+      const cleanup = () => {
+        clearTimeout(timer);
+        signal.removeEventListener('abort', cancel);
+        stream.off('readable', ready);
+        stream.off('error', failed);
+        stream.off('end', failed);
+        stream.off('close', failed);
+      };
+      const ready = () => {
+        if (stream.readableLength > 0) {
+          cleanup();
+          resolve();
+        }
+      };
+      const failed = () => {
+        cleanup();
+        reject(
+          new MusicError(
+            'STREAM_UNAVAILABLE',
+            'The seek replacement could not be prepared.',
+          ),
+        );
+      };
+      const cancel = () => {
+        cleanup();
+        reject(new MusicError('STREAM_CANCELLED', 'Seek was cancelled.'));
+      };
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new MusicError('STREAM_TIMEOUT', 'Seek preparation timed out.'));
+      }, this.options.bufferTimeoutMs ?? 15000);
+      timer.unref();
+      signal.addEventListener('abort', cancel, { once: true });
+      stream.on('readable', ready);
+      stream.once('error', failed);
+      stream.once('end', failed);
+      stream.once('close', failed);
+      stream.read(0);
+    });
+  }
   async seek(positionMs: number): Promise<PlaybackSnapshot> {
     validateSeekPosition(positionMs, this.entry?.track.durationMs);
     if (!this.entry || !['PLAYING', 'PAUSED'].includes(this.machine.state))
@@ -385,6 +438,7 @@ export class PlaybackSession {
     const entry = this.entry;
     let source: AudioSource | undefined;
     let prepared: PreparedAudio | undefined;
+    let pendingResource: AudioResource | undefined;
     try {
       const quality =
         (await this.options.audioQualityForGuild?.(
@@ -415,6 +469,14 @@ export class PlaybackSession {
         metadata: { generation, resourceVersion: this.resourceVersion + 1 },
         inlineVolume: true,
       });
+      pendingResource = resource;
+      await this.waitForSeekAudio(resource, signal);
+      if (
+        signal.aborted ||
+        this.generation !== generation ||
+        this.entry !== entry
+      )
+        throw new MusicError('STREAM_CANCELLED', 'Seek was superseded.');
       const paused = this.machine.state === 'PAUSED';
       this.audibleBefore += this.audible();
       this.resourceVersion++;
@@ -446,6 +508,7 @@ export class PlaybackSession {
       this.player.play(resource);
       return this.snapshot();
     } catch (error) {
+      pendingResource?.playStream?.destroy();
       prepared?.dispose();
       source?.dispose?.();
       if (this.seekAbort === controller) this.seekAbort = undefined;

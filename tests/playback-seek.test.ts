@@ -54,6 +54,13 @@ function setup(seekable = true, live = false) {
       };
     },
   );
+  const createResource = vi.fn(
+    (_i: unknown, options: { metadata: unknown }) => {
+      const r = { metadata: options.metadata, volume: { setVolume: vi.fn() } };
+      resources.push(r);
+      return r;
+    },
+  );
   const session = new PlaybackSession({
     guildId: 'g',
     player: player as never,
@@ -62,11 +69,7 @@ function setup(seekable = true, live = false) {
     now: () => now,
     onEnded: ended,
     onAttempt: attempts,
-    createResource: ((_i: unknown, options: { metadata: unknown }) => {
-      const r = { metadata: options.metadata, volume: { setVolume: vi.fn() } };
-      resources.push(r);
-      return r;
-    }) as never,
+    createResource: createResource as never,
   });
   session.attach({ subscribe: () => ({ unsubscribe() {} }) } as never);
   const entry = {
@@ -84,6 +87,7 @@ function setup(seekable = true, live = false) {
     ended,
     attempts,
     resources,
+    createResource,
     entry,
     clock: (n: number) => {
       now = n;
@@ -246,4 +250,33 @@ describe('authoritative playback position and seek', () => {
     prepared.dispose();
     expect(child.kill).toHaveBeenCalledOnce();
   });
+});
+
+it('keeps the original resource playing when a seek replacement fails before its first packet', async () => {
+  const s = setup();
+  await vi.waitFor(() => expect(s.player.play).toHaveBeenCalled());
+  s.createResource.mockImplementationOnce((_input, options) => {
+    const playStream = new Readable({
+      read() {
+        queueMicrotask(() => this.destroy(new Error('bad replacement')));
+      },
+    });
+    playStream.on('error', () => {});
+    playStream.read(0);
+    return {
+      metadata: options.metadata,
+      volume: { setVolume: vi.fn() },
+      playStream,
+    };
+  });
+  await expect(s.session.seek(20000)).rejects.toMatchObject({
+    code: 'STREAM_UNAVAILABLE',
+  });
+  expect(s.player.play).toHaveBeenCalledOnce();
+  expect(s.session.snapshot()).toMatchObject({
+    state: 'PLAYING',
+    generation: 1,
+    current: { id: 'entry' },
+  });
+  s.session.disconnect();
 });

@@ -150,16 +150,15 @@ async function sendFailure(
   interaction: ExecutableInteraction,
   message: string,
 ): Promise<void> {
-  if (interaction.deferred) {
-    await interaction.editReply({ content: message, components: [] });
-    return;
-  }
-
   if (interaction.replied) {
     await interaction.followUp({
       content: message,
       flags: MessageFlags.Ephemeral,
     });
+    return;
+  }
+  if (interaction.deferred) {
+    await interaction.editReply({ content: message, components: [] });
     return;
   }
 

@@ -1,6 +1,10 @@
 import type { TriviaTrack } from '../session/types.js';
 export function normalizeAnswer(value: string): string {
   return value
+    .replace(
+      /(?:\(|\[)(?:official (?:audio|video|music video)|lyric video|lyrics|visualizer|audio|hd|4k)(?:\)|\])/giu,
+      ' ',
+    )
     .normalize('NFKC')
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, ' ')

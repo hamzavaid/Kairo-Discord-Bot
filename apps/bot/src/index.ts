@@ -227,7 +227,11 @@ async function close(): Promise<void> {
   closing = true;
   idle.shutdown();
   controls.votes.clear();
-  await games.close();
+  await games
+    .close()
+    .catch((error) =>
+      logger.error({ err: error }, 'Game shutdown cleanup failed'),
+    );
   await autoplay.close();
   await engine.shutdown();
   await history.close();

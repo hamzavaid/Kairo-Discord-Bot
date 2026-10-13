@@ -1,3 +1,6 @@
+import { Readable } from 'node:stream';
+import { fileURLToPath } from 'node:url';
+import { FFmpegPipeline } from '../packages/music-engine/src/stream/FFmpegPipeline.js';
 import { MusicService } from '../apps/bot/src/services/MusicService.js';
 import { KairoMusicClient } from '../apps/bot/src/services/KairoMusicClient.js';
 import { PlaybackPolicyService } from '../apps/bot/src/services/PlaybackPolicyService.js';
@@ -553,5 +556,121 @@ it('refuses trivia over existing music and restores an original idle connection 
     );
   } finally {
     await engine.shutdown();
+  }
+});
+
+it('bounds preview audio while retaining the lease and cancels it safely on disconnect', async () => {
+  vi.useFakeTimers();
+  const engine = createKairoMusicEngine({
+    fixtureAudio: { a: { packets } },
+    playbackRuntime,
+  });
+  try {
+    const lease = await engine.acquirePreview(target, 'game');
+    await engine.playPreview({
+      guildId,
+      leaseId: lease.leaseId,
+      track: track('a'),
+      durationMs: 1000,
+    });
+    const player = mocks.players.at(-1) as { state: { status: string } };
+    await vi.advanceTimersByTimeAsync(1001);
+    expect(player.state.status).toBe('idle');
+    expect(engine.getPlayback(guildId).previewActive).toBe(true);
+    await engine.disconnectVoice(guildId);
+    expect(engine.getPlayback(guildId).previewActive).not.toBe(true);
+    await expect(
+      engine.playPreview({
+        guildId,
+        leaseId: lease.leaseId,
+        track: track('a'),
+        durationMs: 1000,
+      }),
+    ).rejects.toMatchObject({ code: 'PREVIEW_EXPIRED' });
+  } finally {
+    await engine.shutdown();
+    vi.useRealTimers();
+  }
+});
+it('does not create a preview lease when shutdown races a pending voice join', async () => {
+  let ready!: (connection: unknown) => void;
+  const wait = new Promise<unknown>((r) => {
+    ready = r;
+  });
+  const before = mocks.connections.length;
+  const engine = createKairoMusicEngine({
+    playbackRuntime: {
+      ...playbackRuntime,
+      waitVoiceReady: () => wait as never,
+    },
+  });
+  const joining = engine.acquirePreview(target, 'game');
+  await vi.waitFor(() => expect(mocks.connections.length).toBe(before + 1));
+  await engine.shutdown();
+  ready(mocks.connections.at(-1));
+  await expect(joining).rejects.toMatchObject({ code: 'STREAM_CANCELLED' });
+  expect(
+    (mocks.connections.at(-1) as { destroy: ReturnType<typeof vi.fn> }).destroy,
+  ).toHaveBeenCalled();
+  expect(engine.getPlayback(guildId).state).toBe('DISCONNECTED');
+  await engine.shutdown();
+});
+
+it('seeks a real local fixture through the public engine without queue mutation and rejects stale generations', async () => {
+  const prepare = vi
+    .spyOn(FFmpegPipeline.prototype, 'prepare')
+    .mockImplementation(() => ({
+      input: Readable.from(
+        packets.map((p) => Buffer.from(p)),
+        { objectMode: true },
+      ),
+      inputType: 'opus',
+      dispose: vi.fn(),
+    }));
+  const engine = createKairoMusicEngine({
+    fixtureAudio: {
+      local: {
+        path: fileURLToPath(
+          new URL('./fixtures/audio/seek-tone.wav', import.meta.url),
+        ),
+      },
+      b: { packets },
+    },
+    playbackRuntime,
+  });
+  try {
+    await engine.connectVoice(target);
+    await engine.setVolume(guildId, 37);
+    await engine.setRepeat(guildId, 'queue');
+    await engine.enqueueMany({
+      guildId,
+      enqueuedBy: 'user',
+      tracks: [{ ...track('local'), durationMs: 1000 }, track('b')],
+    });
+    await vi.waitFor(() =>
+      expect(engine.getPlayback(guildId).state).toBe('PLAYING'),
+    );
+    const before = engine.getQueue(guildId);
+    await engine.seek(guildId, 100, before.generation);
+    expect(engine.getQueue(guildId)).toEqual(before);
+    expect(engine.getPlayback(guildId)).toMatchObject({
+      volume: 37,
+      seekable: true,
+      generation: before.generation,
+    });
+    expect(engine.getPlayback(guildId).positionMs).toBeGreaterThanOrEqual(100);
+    expect(prepare).toHaveBeenLastCalledWith(
+      expect.objectContaining({ kind: 'file', seekable: true }),
+      'flat',
+      100,
+    );
+    await engine.skip(guildId, before.generation);
+    await expect(
+      engine.seek(guildId, 0, before.generation),
+    ).rejects.toMatchObject({ code: 'STALE_PLAYBACK' });
+    expect(engine.getQueue(guildId).current?.track.sourceId).toBe('b');
+  } finally {
+    await engine.shutdown();
+    prepare.mockRestore();
   }
 });
