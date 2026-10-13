@@ -488,3 +488,66 @@ it('executes advanced Discord controls through policy, services and the public e
     await engine.shutdown();
   }
 });
+
+it('isolates bounded trivia previews from normal queues, snapshots and listening history', async () => {
+  const engine = createKairoMusicEngine({
+    fixtureAudio: { secret: { packets } },
+    playbackRuntime,
+  });
+  const events: unknown[] = [];
+  engine.on('playbackAttempt', (e) => events.push(e));
+  try {
+    const lease = await engine.acquirePreview(target, 'game');
+    await expect(
+      engine.enqueue({ guildId, track: track('secret'), enqueuedBy: 'user' }),
+    ).rejects.toMatchObject({ code: 'PLAYBACK_OWNED' });
+    await engine.playPreview({
+      guildId,
+      leaseId: lease.leaseId,
+      track: track('secret'),
+      durationMs: 1000,
+    });
+    expect(engine.getQueue(guildId).current).toBeUndefined();
+    expect(JSON.stringify(engine.getPlayback(guildId))).not.toContain('secret');
+    expect(events).toEqual([]);
+    await engine.stopPreview(guildId, lease.leaseId);
+    await engine.releasePreview(guildId, lease.leaseId);
+    expect(engine.getPlayback(guildId).state).toBe('DISCONNECTED');
+    await engine.releasePreview(guildId, lease.leaseId);
+  } finally {
+    await engine.shutdown();
+  }
+});
+it('refuses trivia over existing music and restores an original idle connection after previews', async () => {
+  const engine = createKairoMusicEngine({
+    fixtureAudio: { a: { packets } },
+    playbackRuntime,
+  });
+  try {
+    await engine.connectVoice(target);
+    await engine.setVolume(guildId, 25);
+    await engine.enqueue({ guildId, track: track('a'), enqueuedBy: 'user' });
+    await expect(engine.acquirePreview(target, 'game')).rejects.toMatchObject({
+      code: 'PLAYBACK_OWNED',
+    });
+    await engine.stop(guildId);
+    const lease = await engine.acquirePreview(target, 'game');
+    await engine.playPreview({
+      guildId,
+      leaseId: lease.leaseId,
+      track: track('a'),
+      durationMs: 1000,
+    });
+    await engine.releasePreview(guildId, lease.leaseId);
+    expect(engine.getPlayback(guildId)).toMatchObject({
+      state: 'IDLE',
+      volume: 25,
+    });
+    await engine.enqueue({ guildId, track: track('a'), enqueuedBy: 'user' });
+    await vi.waitFor(() =>
+      expect(engine.getPlayback(guildId).state).toBe('PLAYING'),
+    );
+  } finally {
+    await engine.shutdown();
+  }
+});

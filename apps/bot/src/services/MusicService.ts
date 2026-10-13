@@ -342,6 +342,24 @@ export class MusicService {
     );
   }
 
+  acquirePreview(target: VoiceTarget, ownerId: string) {
+    this.assertVoiceChannel(target.guildId, target.channelId);
+    return this.client.acquirePreview(target, ownerId);
+  }
+  playPreview(
+    guildId: string,
+    leaseId: string,
+    track: Track,
+    durationMs: number,
+  ) {
+    return this.client.playPreview({ guildId, leaseId, track, durationMs });
+  }
+  stopPreview(guildId: string, leaseId: string) {
+    return this.client.stopPreview(guildId, leaseId);
+  }
+  releasePreview(guildId: string, leaseId: string) {
+    return this.client.releasePreview(guildId, leaseId);
+  }
   async disconnect(
     guildId: string,
     expectedGeneration?: number,

@@ -190,6 +190,18 @@ export class KairoMusicClient {
     );
   }
 
+  acquirePreview(target: VoiceTarget, ownerId: string) {
+    return this.engine.acquirePreview(target, ownerId);
+  }
+  playPreview(request: Parameters<KairoMusicEngine['playPreview']>[0]) {
+    return this.engine.playPreview(request);
+  }
+  stopPreview(guildId: string, leaseId: string) {
+    return this.engine.stopPreview(guildId, leaseId);
+  }
+  releasePreview(guildId: string, leaseId: string) {
+    return this.engine.releasePreview(guildId, leaseId);
+  }
   disconnectVoice(
     guildId: string,
     expectedGeneration?: number,

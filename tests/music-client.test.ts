@@ -32,6 +32,10 @@ describe('bot music adapter', () => {
       resume: vi.fn(),
       on: vi.fn(),
       shutdown: vi.fn(),
+      acquirePreview: vi.fn(),
+      playPreview: vi.fn(),
+      stopPreview: vi.fn(),
+      releasePreview: vi.fn(),
     } satisfies KairoMusicEngine;
     const client = new KairoMusicClient(engine);
     await client.parse('Night Drive', 'guild-1', 'user-1');
