@@ -1,3 +1,4 @@
+import { MongoGameRepository, type GameRepository } from './GameRepository.js';
 import {
   MongoHistoryRepository,
   MongoAuditRepository,
@@ -305,6 +306,7 @@ export async function connectGuildSettings(
   library: LibraryRepository;
   history: HistoryRepository;
   audit: AuditRepository;
+  games: GameRepository;
   close(): Promise<void>;
 }> {
   const connection = await mongoose
@@ -316,11 +318,13 @@ export async function connectGuildSettings(
   const library = new MongoLibraryRepository(connection, options);
   const history = new MongoHistoryRepository(connection);
   const audit = new MongoAuditRepository(connection);
+  const games = new MongoGameRepository(connection);
   try {
     await Promise.all([
       library.initialize(),
       history.initialize(),
       audit.initialize(),
+      games.initialize(),
     ]);
   } catch (error) {
     await connection.close();
@@ -330,6 +334,7 @@ export async function connectGuildSettings(
     library,
     history,
     audit,
+    games,
     repository: new MongoGuildSettingsRepository(connection),
     close: async () => {
       await connection.close();
