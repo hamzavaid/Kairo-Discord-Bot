@@ -93,6 +93,21 @@ export class LibraryService {
   unlikeSaved(owner: string, track: SavedTrack | Track) {
     return this.repository.unlike(owner, trackIdentity(saveTrack(track)));
   }
+  async isLiked(owner: string, track: SavedTrack | Track) {
+    const identity = trackIdentity(saveTrack(track));
+    return (await this.repository.liked(owner)).entries.some(
+      (entry) => entry.fingerprint === identity,
+    );
+  }
+  async toggleLikeSaved(owner: string, track: SavedTrack | Track) {
+    if (await this.isLiked(owner, track))
+      return {
+        liked: false,
+        changed: await this.unlikeSaved(owner, track),
+      };
+    const result = await this.likeSaved(owner, track);
+    return { liked: true, changed: result.added };
+  }
   addSaved(owner: string, name: string, track: SavedTrack | Track) {
     return this.repository.append(owner, name, [saveTrack(track)]);
   }

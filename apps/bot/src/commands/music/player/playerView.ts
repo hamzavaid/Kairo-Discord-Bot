@@ -168,16 +168,12 @@ export function playerView(
     ),
   );
   const liked = current && state.liked.has(current.id);
+  const likeLabel = data.shared ? 'Like/Unlike' : liked ? 'Unlike' : 'Like';
   card.addActionRowComponents(
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       controls('volume-down', 'Volume -'),
       controls('shuffle', 'Shuffle', queue.upcoming.length < 2),
-      controls(
-        'like',
-        liked ? 'Liked' : 'Like song',
-        !current || !hasLibrary || Boolean(liked),
-        ButtonStyle.Success,
-      ),
+      controls('like', likeLabel, !current || !hasLibrary, ButtonStyle.Success),
       controls('add', 'Add song', false),
       controls('volume-up', 'Volume +'),
     ),
@@ -191,7 +187,6 @@ export function playerView(
   );
   card.addActionRowComponents(
     new ActionRowBuilder<ButtonBuilder>().addComponents(
-      controls('unlike', 'Unlike', !current || !hasLibrary),
       controls('discover', 'Discover', !data.discoveryAvailable),
       controls('seek', 'Seek', !current || !playback.seekable),
     ),

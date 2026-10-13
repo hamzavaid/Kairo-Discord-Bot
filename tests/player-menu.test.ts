@@ -15,7 +15,7 @@ afterEach(() => {
   cleanups.splice(0).forEach((stop) => stop());
   vi.useRealTimers();
 });
-async function setup(upcoming = 13) {
+async function setup(upcoming = 13, likedInitially = false) {
   let state: PlaybackSnapshot['state'] = 'PLAYING';
   const entry = (id: number) => ({
     id: `entry-${id}`,
@@ -76,7 +76,9 @@ async function setup(upcoming = 13) {
     new MongoLibraryRepository(connection),
     music as unknown as MusicService,
   );
+  if (likedInitially) await library.likeSaved('alice', queue.current!.track);
   const likeSaved = vi.spyOn(library, 'likeSaved');
+  const unlikeSaved = vi.spyOn(library, 'unlikeSaved');
   const context = {
     music,
     library,
@@ -191,6 +193,7 @@ async function setup(upcoming = 13) {
     context,
     library,
     likeSaved,
+    unlikeSaved,
     collector,
     createCollector,
     interaction,
@@ -253,15 +256,27 @@ it('pauses/resumes, skips, restores previous and stops via MusicService', async 
   expect(s.music.stop).toHaveBeenCalledWith('guild');
   expect(s.text()).toContain('Nothing playing');
 });
-it('likes the displayed track persistently without a second metadata search or playback', async () => {
+it('toggles the displayed track in Liked Songs without another search or playback', async () => {
   const s = await setup();
   const displayed = s.queue.current!.track;
-  await s.click('Like song');
+  expect(s.button('Like')).toBeDefined();
+  await s.click('Like');
   expect(s.likeSaved).toHaveBeenCalledWith('alice', displayed);
   expect((await s.library.liked('alice')).entries).toHaveLength(1);
-  expect(s.button('Liked').disabled).toBe(true);
+  expect(s.button('Unlike').disabled).toBe(false);
+  await s.click('Unlike');
+  expect(s.unlikeSaved).toHaveBeenCalledWith('alice', displayed);
+  expect((await s.library.liked('alice')).entries).toHaveLength(0);
+  expect(s.button('Like').disabled).toBe(false);
   expect(s.music.info).not.toHaveBeenCalled();
   expect(s.music.play).not.toHaveBeenCalled();
+});
+it('shows Unlike immediately when the private player track is already liked', async () => {
+  const s = await setup(13, true);
+  expect(s.button('Unlike').disabled).toBe(false);
+  expect(
+    s.controls().filter((c) => ['Like', 'Unlike'].includes(c.label)),
+  ).toHaveLength(1);
 });
 it('adds a modal query through the existing play path and rechecks current voice state on submission', async () => {
   const s = await setup();
@@ -288,7 +303,7 @@ it('revalidates voice for every transport action and logs safe component failure
 });
 it('rejects stale track controls and forged non-owner clicks', async () => {
   const s = await setup();
-  const stale = s.component(s.button('Like song').custom_id);
+  const stale = s.component(s.button('Like').custom_id);
   s.queue.current = { ...s.queue.current!, id: 'new-entry' };
   s.queue.generation++;
   s.collector.emit('collect', stale.click);
@@ -359,7 +374,7 @@ it('disables unavailable controls for an empty/disconnected session and handles 
   await s.click('Refresh');
   expect(s.button('Previous').disabled).toBe(true);
   expect(s.button('Skip').disabled).toBe(true);
-  expect(s.button('Like song').disabled).toBe(true);
+  expect(s.button('Like').disabled).toBe(true);
   expect(s.button('Add song').disabled).toBe(false);
   s.queue.current = {
     id: 'track',
@@ -370,11 +385,11 @@ it('disables unavailable controls for an empty/disconnected session and handles 
   s.queue.generation++;
   await s.click('Refresh');
   s.likeSaved.mockRejectedValueOnce(new Error('private mongo details'));
-  const { click } = await s.click('Like song');
+  const { click } = await s.click('Like');
   expect(JSON.stringify(click.followUp.mock.calls)).not.toContain(
     'private mongo',
   );
-  expect(s.button('Like song').disabled).toBe(false);
+  expect(s.button('Like').disabled).toBe(false);
 });
 
 it('bounds hostile metadata within component text limits and omits signed media links', async () => {
@@ -487,7 +502,7 @@ it('renders a compact artwork section and separates transport, queue actions and
   expect(rows[1].components.map((c: { label: string }) => c.label)).toEqual([
     'Volume -',
     'Shuffle',
-    'Like song',
+    'Like',
     'Add song',
     'Volume +',
   ]);

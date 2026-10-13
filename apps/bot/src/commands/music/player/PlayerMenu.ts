@@ -44,7 +44,6 @@ const actions = new Set([
   'volume-down',
   'volume-up',
   'lyrics',
-  'unlike',
   'filter',
   'discover',
 ]);
@@ -58,7 +57,6 @@ const trackActions = new Set([
   'skip',
   'stop',
   'like',
-  'unlike',
   'shuffle',
   'repeat',
   'autoplay',
@@ -108,6 +106,19 @@ export class PlayerMenu {
         Math.max(1, Math.ceil(this.data.queue.upcoming.length / 10)),
       ),
     );
+    if (!this.shared) {
+      this.liked.clear();
+      const current = this.data.queue.current;
+      if (
+        current &&
+        this.context.library &&
+        (await library(this.context).isLiked(
+          this.interaction.user.id,
+          current.track,
+        ))
+      )
+        this.liked.add(current.id);
+    }
   }
   private render(busy = this.state.busy) {
     return playerView(
@@ -424,20 +435,6 @@ export class PlayerMenu {
       }
       return;
     }
-    if (action.name === 'unlike') {
-      const entry = this.data.queue.current;
-      if (!entry)
-        throw new CommandError('STALE_PLAYER', 'There is no current song.');
-      const removed = await library(this.context).unlikeSaved(
-        i.user.id,
-        entry.track,
-      );
-      this.liked.delete(entry.id);
-      this.state.notice = removed
-        ? 'Removed from your Liked Songs.'
-        : 'This song is not in your Liked Songs.';
-      return;
-    }
     if (action.name === 'pause') await this.context.music.pause(guildId);
     else if (action.name === 'resume') await this.context.music.resume(guildId);
     else if (action.name === 'previous')
@@ -454,14 +451,21 @@ export class PlayerMenu {
           'STALE_PLAYER',
           'There is no current song to like.',
         );
-      const result = await library(this.context).likeSaved(
+      const result = await library(this.context).toggleLikeSaved(
         i.user.id,
         entry.track,
       );
-      this.liked.add(entry.id);
-      this.state.notice = result.added
-        ? 'Saved to your Liked Songs.'
-        : 'You already liked this song.';
+      if (!this.shared) {
+        if (result.liked) this.liked.add(entry.id);
+        else this.liked.delete(entry.id);
+      }
+      this.state.notice = result.liked
+        ? result.changed
+          ? 'Saved to your Liked Songs.'
+          : 'This song is already in your Liked Songs.'
+        : result.changed
+          ? 'Removed from your Liked Songs.'
+          : 'This song is not in your Liked Songs.';
     } else if (action.name === 'queue-prev') this.state.page--;
     else if (action.name === 'queue-next') this.state.page++;
   }

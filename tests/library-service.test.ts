@@ -201,3 +201,16 @@ it('saves a resolved info track with origin identity and duplicate protection wi
   expect(music.info).not.toHaveBeenCalled();
   expect(music.playTracks).not.toHaveBeenCalled();
 });
+
+it('checks and toggles a saved track using canonical identity', async () => {
+  const { service } = setup();
+  expect(await service.isLiked('alice', libraryTrack)).toBe(false);
+  await expect(service.toggleLikeSaved('alice', libraryTrack)).resolves.toEqual(
+    { liked: true, changed: true },
+  );
+  expect(await service.isLiked('alice', libraryTrack)).toBe(true);
+  await expect(service.toggleLikeSaved('alice', libraryTrack)).resolves.toEqual(
+    { liked: false, changed: true },
+  );
+  expect(await service.isLiked('alice', libraryTrack)).toBe(false);
+});
