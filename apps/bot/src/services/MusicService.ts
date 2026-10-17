@@ -8,8 +8,10 @@ import {
 } from '@kairo/music-engine';
 import { KairoMusicClient } from './KairoMusicClient.js';
 import { CommandError } from '../errors.js';
+import { abortable, WorkScope, OperationError } from '@kairo/shared';
 
 export interface PlayInput {
+  signal?: AbortSignal;
   guildId: string;
   userId: string;
   query: string;
@@ -28,6 +30,8 @@ export interface PlayOutcome {
 /** Bot-side orchestration. Music state and playback remain engine-owned. */
 export class MusicService {
   private readonly channels = new Map<string, string>();
+  private readonly scope = new WorkScope(30_000);
+  private readonly pending = new Map<string, Set<AbortController>>();
 
   constructor(private readonly client: KairoMusicClient) {}
 
@@ -68,11 +72,45 @@ export class MusicService {
   }
 
   play(input: PlayInput): Promise<PlayOutcome> {
-    return this.playAt(input);
+    return this.admitPlay(input);
   }
 
   playNext(input: PlayInput): Promise<PlayOutcome> {
-    return this.playAt(input, 'next');
+    return this.admitPlay(input, 'next');
+  }
+
+  private async admitPlay(input: PlayInput, insertion?: 'next') {
+    const abort = new AbortController();
+    const pending =
+      this.pending.get(input.guildId) ?? new Set<AbortController>();
+    pending.add(abort);
+    this.pending.set(input.guildId, pending);
+    try {
+      return await this.scope.run(
+        (signal) => this.playAt({ ...input, signal }, insertion),
+        AbortSignal.any([
+          abort.signal,
+          ...(input.signal ? [input.signal] : []),
+        ]),
+      );
+    } catch (error) {
+      if (error instanceof OperationError)
+        throw new MusicError(
+          error.code === 'RESOURCE_BUSY' ? 'RESOURCE_BUSY' : 'PARSER_CANCELLED',
+          error.message,
+        );
+      throw error;
+    } finally {
+      pending.delete(abort);
+      if (!pending.size) this.pending.delete(input.guildId);
+    }
+  }
+  private cancelPending(guildId: string) {
+    for (const job of this.pending.get(guildId) ?? []) job.abort();
+  }
+  close() {
+    this.scope.close();
+    for (const guildId of this.pending.keys()) this.cancelPending(guildId);
   }
 
   private async playAt(
@@ -83,7 +121,20 @@ export class MusicService {
     const state = this.client.getPlayback(guildId).state;
     const connected = state !== 'DISCONNECTED';
     if (connected) this.assertVoiceChannel(guildId, voiceTarget.channelId);
-    const parsed = await this.client.parse(query, guildId, userId, true);
+    const signal = input.signal!;
+    const check = () => {
+      if (signal.aborted)
+        throw new MusicError(
+          'PARSER_CANCELLED',
+          'The music request was cancelled.',
+        );
+    };
+    check();
+    const parsed = await abortable(
+      this.client.parse(query, guildId, userId, true, undefined, signal),
+      signal,
+    );
+    check();
     let tracks: Track[];
     const collection =
       parsed.kind === 'collection' ? parsed.collection : undefined;
@@ -107,7 +158,11 @@ export class MusicService {
           'NO_SEARCH_RESULTS',
           'No matching song was found.',
         );
-      const track = await this.client.preparePlayable(metadata);
+      const track = await abortable(
+        this.client.preparePlayable(metadata, signal),
+        signal,
+      );
+      check();
       if (!this.client.canPlay(track))
         throw new MusicError(
           'STREAM_UNAVAILABLE',
@@ -117,8 +172,13 @@ export class MusicService {
     }
     if (!connected) {
       await this.client.connectVoice(voiceTarget);
+      if (signal.aborted) {
+        await this.client.disconnectVoice(guildId);
+        check();
+      }
       this.channels.set(guildId, voiceTarget.channelId);
     }
+    check();
     const queue = collection
       ? await this.client.enqueueMany(guildId, tracks, userId, insertion)
       : await this.client.enqueue(guildId, tracks[0]!, userId, insertion);
@@ -183,21 +243,24 @@ export class MusicService {
     input: string,
     guildId: string,
     userId: string,
+    signal?: AbortSignal,
   ): Promise<TrackCollection> {
-    const result = await this.client
-      .parse(input, guildId, userId, true)
-      .catch((error: unknown) => {
-        if (
-          error instanceof MusicError &&
-          (error.code === 'UNSUPPORTED_PROVIDER' ||
-            error.code === 'INVALID_QUERY')
-        )
-          throw new MusicError(
-            'COLLECTION_UNSUPPORTED',
-            'Enter a supported playlist or album URL.',
-          );
-        throw error;
-      });
+    const result = await (
+      signal
+        ? this.client.parse(input, guildId, userId, true, undefined, signal)
+        : this.client.parse(input, guildId, userId, true)
+    ).catch((error: unknown) => {
+      if (
+        error instanceof MusicError &&
+        (error.code === 'UNSUPPORTED_PROVIDER' ||
+          error.code === 'INVALID_QUERY')
+      )
+        throw new MusicError(
+          'COLLECTION_UNSUPPORTED',
+          'Enter a supported playlist or album URL.',
+        );
+      throw error;
+    });
     if (result.kind !== 'collection')
       throw new MusicError(
         'COLLECTION_UNSUPPORTED',
@@ -329,6 +392,7 @@ export class MusicService {
   }
 
   skip(guildId: string, expectedGeneration?: number) {
+    this.cancelPending(guildId);
     return this.client.skip(
       guildId,
       ...(expectedGeneration === undefined ? [] : [expectedGeneration]),
@@ -336,6 +400,7 @@ export class MusicService {
   }
 
   stop(guildId: string, expectedGeneration?: number) {
+    this.cancelPending(guildId);
     return this.client.stop(
       guildId,
       ...(expectedGeneration === undefined ? [] : [expectedGeneration]),
@@ -371,6 +436,7 @@ export class MusicService {
     guildId: string,
     expectedGeneration?: number,
   ): Promise<void> {
+    this.cancelPending(guildId);
     await this.client.disconnectVoice(
       guildId,
       ...(expectedGeneration === undefined ? [] : [expectedGeneration]),

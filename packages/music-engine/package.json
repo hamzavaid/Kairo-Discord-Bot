@@ -13,6 +13,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@kairo/shared": "workspace:*",
     "@discordjs/voice": "0.19.2",
     "kuromoji": "0.1.2",
     "opusscript": "0.0.8",

@@ -88,10 +88,12 @@ describe('Phase 6 MusicService', () => {
       allowCollections: true,
       guildId: 'guild',
       requestedBy: 'user',
+      signal: expect.any(AbortSignal),
     });
     expect(engine.connectVoice).toHaveBeenCalledWith(target);
     expect(engine.preparePlayable).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'fixture:one' }),
+      expect.any(AbortSignal),
     );
     expect(engine.enqueue).toHaveBeenCalledWith({
       guildId: 'guild',

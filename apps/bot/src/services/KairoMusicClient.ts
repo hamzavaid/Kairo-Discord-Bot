@@ -42,8 +42,8 @@ export class KairoMusicClient {
     });
   }
 
-  preparePlayable(track: Track): Promise<Track> {
-    return this.engine.preparePlayable(track);
+  preparePlayable(track: Track, signal?: AbortSignal): Promise<Track> {
+    return this.engine.preparePlayable(track, ...(signal ? [signal] : []));
   }
 
   canPlay(track: Track): boolean {

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { WorkScope, OperationError } from '@kairo/shared';
 import {
   validateVolume,
   validateFilter,
@@ -175,6 +176,7 @@ export function createKairoMusicEngine(
   options: EngineOptions = {},
 ): KairoMusicEngine {
   const maxCollectionItems = options.maxCollectionItems ?? 200;
+  const work = new WorkScope(30_000);
   if (
     !Number.isInteger(maxCollectionItems) ||
     maxCollectionItems < 1 ||
@@ -500,7 +502,9 @@ export function createKairoMusicEngine(
 
   return {
     preparePlayable(track, signal) {
-      return playable.prepare(track, signal);
+      return work
+        .run((active) => playable.prepare(track, active), signal)
+        .catch(cancelError);
     },
     canPlay(track) {
       return resolver.canResolve(track);
@@ -925,148 +929,157 @@ export function createKairoMusicEngine(
       return matcher.match(request);
     },
     async parse(request) {
-      const eventContext = {
-        guildId: request.guildId,
-        requestedBy: request.requestedBy,
-        ...(request.requestId === undefined
-          ? {}
-          : { requestId: request.requestId }),
-      };
-      try {
-        if (request.signal?.aborted) {
-          throw new MusicError(
-            'PARSER_CANCELLED',
-            'The music request was cancelled.',
-          );
-        }
-        if (!request.guildId || !request.requestedBy) {
-          throw new MusicError(
-            'INVALID_QUERY',
-            'A guild and requester are required.',
-          );
-        }
-        const maxResults = request.maxResults ?? 10;
-        if (
-          !Number.isInteger(maxResults) ||
-          maxResults < 1 ||
-          maxResults > 25
-        ) {
-          throw new MusicError(
-            'INVALID_QUERY',
-            'Choose between 1 and 25 results.',
-          );
-        }
-        const classified = classifyQuery(normalizeQuery(request.input));
-        let result: ParseResult;
-        if (classified.kind === 'provider-collection') {
-          if (!request.allowCollections)
-            throw new MusicError(
-              'COLLECTION_UNSUPPORTED',
-              'Use a collection import command for this URL.',
-            );
-          const { provider, value } = await manager.collection(
-            classified,
-            maxCollectionItems,
-            request.signal,
-          );
-          const tracks: Track[] = [];
-          let failed = value.failed;
-          for (const payload of value.tracks.slice(0, maxCollectionItems)) {
-            try {
-              tracks.push(
-                normalizeProviderTrack(payload, {
+      return work
+        .run(async (signal) => {
+          request = { ...request, signal };
+          const eventContext = {
+            guildId: request.guildId,
+            requestedBy: request.requestedBy,
+            ...(request.requestId === undefined
+              ? {}
+              : { requestId: request.requestId }),
+          };
+          try {
+            if (request.signal?.aborted) {
+              throw new MusicError(
+                'PARSER_CANCELLED',
+                'The music request was cancelled.',
+              );
+            }
+            if (!request.guildId || !request.requestedBy) {
+              throw new MusicError(
+                'INVALID_QUERY',
+                'A guild and requester are required.',
+              );
+            }
+            const maxResults = request.maxResults ?? 10;
+            if (
+              !Number.isInteger(maxResults) ||
+              maxResults < 1 ||
+              maxResults > 25
+            ) {
+              throw new MusicError(
+                'INVALID_QUERY',
+                'Choose between 1 and 25 results.',
+              );
+            }
+            const classified = classifyQuery(normalizeQuery(request.input));
+            let result: ParseResult;
+            if (classified.kind === 'provider-collection') {
+              if (!request.allowCollections)
+                throw new MusicError(
+                  'COLLECTION_UNSUPPORTED',
+                  'Use a collection import command for this URL.',
+                );
+              const { provider, value } = await manager.collection(
+                classified,
+                maxCollectionItems,
+                request.signal,
+              );
+              const tracks: Track[] = [];
+              let failed = value.failed;
+              for (const payload of value.tracks.slice(0, maxCollectionItems)) {
+                try {
+                  tracks.push(
+                    normalizeProviderTrack(payload, {
+                      providerId: provider.id,
+                      input: request.input,
+                      requestedBy: request.requestedBy,
+                      parsedBy: provider.id,
+                    }),
+                  );
+                } catch {
+                  failed++;
+                }
+              }
+              if (!tracks.length)
+                throw new MusicError(
+                  'COLLECTION_EMPTY',
+                  'The collection has no importable tracks.',
+                );
+              result = {
+                kind: 'collection',
+                collection: {
+                  id: `${provider.id}:${classified.sourceId}`,
+                  title: value.title,
+                  ...(value.visibility ? { visibility: value.visibility } : {}),
+                  sourceProvider: provider.id,
+                  sourceId: classified.sourceId,
+                  canonicalUrl: classified.canonicalUrl,
+                  tracks,
+                  importSummary: {
+                    total: value.total,
+                    imported: tracks.length,
+                    skipped: value.skipped,
+                    failed,
+                    truncated: value.truncated,
+                    partial: value.partial || failed > 0,
+                  },
+                },
+              };
+            } else if (classified.kind === 'provider-track') {
+              const { provider, value: payload } = await manager.lookup(
+                classified,
+                request.signal,
+              );
+              result = {
+                kind: 'track',
+                track: normalizeProviderTrack(payload, {
                   providerId: provider.id,
                   input: request.input,
                   requestedBy: request.requestedBy,
                   parsedBy: provider.id,
+                  canonicalUrl: classified.canonicalUrl,
+                }),
+              };
+            } else {
+              const { provider, value: payloads } = await manager.search(
+                classified.query,
+                maxResults,
+                request.preferredProvider,
+                request.signal,
+              );
+              const candidates = payloads.slice(0, maxResults).map((payload) =>
+                normalizeProviderTrack(payload, {
+                  providerId: provider.id,
+                  input: request.input,
+                  requestedBy: request.requestedBy,
+                  parsedBy: 'search',
                 }),
               );
-            } catch {
-              failed++;
+              result = { kind: 'search', candidates };
             }
+            emit({
+              type: 'parseSucceeded',
+              ...eventContext,
+              resultKind: result.kind,
+            });
+            return result;
+          } catch (error) {
+            const safeError =
+              error instanceof MusicError
+                ? new MusicError(
+                    error.code,
+                    error.message,
+                    error.retryable,
+                    request.requestId,
+                    error.diagnostics,
+                  )
+                : new MusicError(
+                    'PROVIDER_PARSE_ERROR',
+                    'The music source returned invalid metadata.',
+                    false,
+                    request.requestId,
+                  );
+            emit({
+              type: 'parseFailed',
+              ...eventContext,
+              code: safeError.code,
+            });
+            throw safeError;
           }
-          if (!tracks.length)
-            throw new MusicError(
-              'COLLECTION_EMPTY',
-              'The collection has no importable tracks.',
-            );
-          result = {
-            kind: 'collection',
-            collection: {
-              id: `${provider.id}:${classified.sourceId}`,
-              title: value.title,
-              ...(value.visibility ? { visibility: value.visibility } : {}),
-              sourceProvider: provider.id,
-              sourceId: classified.sourceId,
-              canonicalUrl: classified.canonicalUrl,
-              tracks,
-              importSummary: {
-                total: value.total,
-                imported: tracks.length,
-                skipped: value.skipped,
-                failed,
-                truncated: value.truncated,
-                partial: value.partial || failed > 0,
-              },
-            },
-          };
-        } else if (classified.kind === 'provider-track') {
-          const { provider, value: payload } = await manager.lookup(
-            classified,
-            request.signal,
-          );
-          result = {
-            kind: 'track',
-            track: normalizeProviderTrack(payload, {
-              providerId: provider.id,
-              input: request.input,
-              requestedBy: request.requestedBy,
-              parsedBy: provider.id,
-              canonicalUrl: classified.canonicalUrl,
-            }),
-          };
-        } else {
-          const { provider, value: payloads } = await manager.search(
-            classified.query,
-            maxResults,
-            request.preferredProvider,
-            request.signal,
-          );
-          const candidates = payloads.slice(0, maxResults).map((payload) =>
-            normalizeProviderTrack(payload, {
-              providerId: provider.id,
-              input: request.input,
-              requestedBy: request.requestedBy,
-              parsedBy: 'search',
-            }),
-          );
-          result = { kind: 'search', candidates };
-        }
-        emit({
-          type: 'parseSucceeded',
-          ...eventContext,
-          resultKind: result.kind,
-        });
-        return result;
-      } catch (error) {
-        const safeError =
-          error instanceof MusicError
-            ? new MusicError(
-                error.code,
-                error.message,
-                error.retryable,
-                request.requestId,
-                error.diagnostics,
-              )
-            : new MusicError(
-                'PROVIDER_PARSE_ERROR',
-                'The music source returned invalid metadata.',
-                false,
-                request.requestId,
-              );
-        emit({ type: 'parseFailed', ...eventContext, code: safeError.code });
-        throw safeError;
-      }
+        }, request.signal)
+        .catch(cancelError);
     },
     on(type, listener) {
       const bucket =
@@ -1078,6 +1091,7 @@ export function createKairoMusicEngine(
     },
     async shutdown() {
       closing = true;
+      work.close();
       for (const guildId of new Set([...sessions.keys(), ...previews.keys()])) {
         await lock(guildId).runExclusive(async () => {
           await releasePreviewInternal(guildId, false);
@@ -1093,4 +1107,18 @@ export function createKairoMusicEngine(
       listeners.clear();
     },
   };
+}
+
+function cancelError(error: unknown): never {
+  if (error instanceof OperationError)
+    throw new MusicError(
+      error.code === 'RESOURCE_BUSY'
+        ? 'RESOURCE_BUSY'
+        : error.code === 'OPERATION_TIMEOUT'
+          ? 'PROVIDER_TIMEOUT'
+          : 'PARSER_CANCELLED',
+      error.message,
+      error.code !== 'OPERATION_CANCELLED',
+    );
+  throw error;
 }
