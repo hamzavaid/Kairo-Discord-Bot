@@ -1,4 +1,14 @@
 import seekCommand from './music/seek.js';
+import healthCommand from './developer/health.js';
+import providerstatusCommand from './developer/providerstatus.js';
+import sessioninfoCommand from './developer/sessioninfo.js';
+import {
+  WorkScope,
+  OperationError,
+  withOperation,
+  type Metrics,
+} from '@kairo/shared';
+import { UiLifecycle } from '../bootstrap/reliability.js';
 import { GameError } from '@kairo/games';
 import gamesCommand from './games/games.js';
 import rpsCommand from './games/rps.js';
@@ -75,6 +85,8 @@ export type ErrorReporter = (
 ) => void;
 
 export interface SlashCommandHandlerOptions extends CommandServices {
+  metrics?: Metrics;
+  acceptingWork?: () => boolean;
   developerIds: ReadonlySet<string>;
   reportError?: ErrorReporter;
 }
@@ -89,6 +101,8 @@ export interface CommandRegistrationTransport {
 }
 
 function safeFailure(error: unknown): { code: string; message: string } {
+  if (error instanceof OperationError)
+    return { code: error.code, message: error.message };
   if (error instanceof GameError)
     return { code: error.code, message: error.message };
   if (error instanceof LibraryError)
@@ -206,6 +220,9 @@ const builtInCommands: readonly SlashCommand[] = [
   hangmanCommand,
   unoCommand,
   musictriviaCommand,
+  healthCommand,
+  providerstatusCommand,
+  sessioninfoCommand,
 ];
 
 const builtInMessageCommands: readonly MessageCommand[] = [
@@ -280,6 +297,14 @@ export function commandRegistrationData(
 }
 
 export class SlashCommandHandler {
+  private readonly work = new WorkScope(30_000, 128);
+  private readonly ui = new UiLifecycle();
+  private closing = false;
+  close() {
+    this.closing = true;
+    this.work.close();
+    this.ui.close();
+  }
   readonly userCommands = new Collection<string, UserCommand>();
   readonly messageCommands = new Collection<string, MessageCommand>();
   readonly commands = new Collection<string, SlashCommand>();
@@ -357,6 +382,11 @@ export class SlashCommandHandler {
     let errorCode: string | undefined;
 
     try {
+      if (this.closing || this.options.acceptingWork?.() === false)
+        throw new CommandError(
+          'BOT_UNAVAILABLE',
+          'Kairo is starting or shutting down. Try again shortly.',
+        );
       if (!command) throw new CommandError('MISSING_QUERY', 'Unknown command.');
 
       const isDeveloper = this.options.developerIds.has(userId);
@@ -416,6 +446,10 @@ export class SlashCommandHandler {
           );
       }
       const context: CommandExecutionContext = {
+        ...(this.options.diagnostics
+          ? { diagnostics: this.options.diagnostics }
+          : {}),
+        trackCollector: (collector) => this.ui.track(collector),
         music: this.options.music,
         ...(this.options.games ? { games: this.options.games } : {}),
         ...(this.options.discovery
@@ -467,13 +501,20 @@ export class SlashCommandHandler {
         },
       };
 
-      if (isMessageInteraction(interaction))
-        await this.messageCommands
-          .get(commandName)!
-          .execute(interaction, context);
-      else if (isUserInteraction(interaction))
-        await this.userCommands.get(commandName)!.execute(interaction, context);
-      else await this.get(commandName)!.execute(interaction, context);
+      await this.work.run((signal) =>
+        withOperation(signal, async () => {
+          context.signal = signal;
+          if (isMessageInteraction(interaction))
+            await this.messageCommands
+              .get(commandName)!
+              .execute(interaction, context);
+          else if (isUserInteraction(interaction))
+            await this.userCommands
+              .get(commandName)!
+              .execute(interaction, context);
+          else await this.get(commandName)!.execute(interaction, context);
+        }),
+      );
       success = true;
     } catch (error) {
       if (isInteractionResponseError(error)) {
@@ -511,6 +552,7 @@ export class SlashCommandHandler {
     userId: string,
     code: string,
   ): void {
+    this.options.metrics?.increment('interaction_errors_total');
     try {
       this.options.reportError?.(error, {
         command,

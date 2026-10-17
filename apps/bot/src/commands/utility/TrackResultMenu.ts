@@ -102,6 +102,7 @@ export async function showTrackResults(
         )),
   });
   let pending = Promise.resolve();
+  context.trackCollector?.(collector);
   collector.on('collect', (i) => {
     if (!active || i.user.id !== interaction.user.id || !i.isButton()) return;
     const selectedIndex = index;

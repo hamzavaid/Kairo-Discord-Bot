@@ -56,6 +56,7 @@ export async function gamesBrowser(
       b.user.id === i.user.id &&
       GAME_KINDS.some((k) => b.customId === `${prefix}:${k}`),
   });
+  c.trackCollector?.(collector);
   collector.on('collect', (b) => {
     if (!active || busy || b.user.id !== i.user.id) return;
     busy = true;

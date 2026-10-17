@@ -73,6 +73,7 @@ const command: SlashCommand = {
         b.user.id === i.user.id &&
         [`${prefix}:previous`, `${prefix}:next`].includes(b.customId),
     });
+    c.trackCollector?.(collector);
     collector.on('collect', (b) => {
       if (!active || busy || b.user.id !== i.user.id || !b.isButton()) return;
       busy = true;

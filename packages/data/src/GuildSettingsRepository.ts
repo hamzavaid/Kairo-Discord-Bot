@@ -10,6 +10,7 @@ import {
   type LibraryRepository,
 } from './LibraryRepository.js';
 import mongoose, { type Connection, type Model } from 'mongoose';
+import { databaseHealth } from './health.js';
 
 export const DEFAULT_IDLE_DISCONNECT_SECONDS = 60;
 export const MAX_IDLE_DISCONNECT_SECONDS = 3600;
@@ -308,11 +309,16 @@ export async function connectGuildSettings(
   audit: AuditRepository;
   games: GameRepository;
   close(): Promise<void>;
+  health(): Promise<{ status: 'healthy' | 'unavailable' }>;
 }> {
   const connection = await mongoose
     .createConnection(uri, {
       serverSelectionTimeoutMS: 5_000,
       bufferCommands: false,
+      socketTimeoutMS: 5000,
+      connectTimeoutMS: 5000,
+      maxPoolSize: 10,
+      waitQueueTimeoutMS: 5000,
     })
     .asPromise();
   const library = new MongoLibraryRepository(connection, options);
@@ -335,6 +341,7 @@ export async function connectGuildSettings(
     history,
     audit,
     games,
+    health: () => databaseHealth(connection),
     repository: new MongoGuildSettingsRepository(connection),
     close: async () => {
       await connection.close();

@@ -135,28 +135,31 @@ const command: SlashCommand = {
         i.user.id === interaction.user.id,
     });
 
-    collector.on('collect', async (i) => {
-      if (i.isStringSelectMenu() && i.customId === 'help-category') {
-        const category = i.values[0] as CommandCategory;
+    context.trackCollector?.(collector);
+    collector.on('collect', (i) => {
+      void (async () => {
+        if (i.isStringSelectMenu() && i.customId === 'help-category') {
+          const category = i.values[0] as CommandCategory;
 
-        await i.update({
-          components: [
-            createCategoryContainer(
-              context.commands,
-              category,
-              context.isDeveloper,
-            ),
-          ],
-        });
+          await i.update({
+            components: [
+              createCategoryContainer(
+                context.commands,
+                category,
+                context.isDeveloper,
+              ),
+            ],
+          });
 
-        return;
-      }
+          return;
+        }
 
-      if (i.isButton() && i.customId === 'back') {
-        await i.update({
-          components: [createHelpContainer(filtered)],
-        });
-      }
+        if (i.isButton() && i.customId === 'back') {
+          await i.update({
+            components: [createHelpContainer(filtered)],
+          });
+        }
+      })().catch((error) => context.reportComponentError?.(error));
     });
   },
 };

@@ -29,6 +29,27 @@ const environmentSchema = z.object({
   FFMPEG_PATH: z.string().min(1).default('ffmpeg'),
   FFPROBE_PATH: z.string().min(1).default('ffprobe'),
   YT_DLP_PATH: z.string().min(1).default('yt-dlp'),
+  KAIRO_STARTUP_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(100)
+    .max(60000)
+    .default(15000),
+  KAIRO_SHUTDOWN_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1000)
+    .max(60000)
+    .default(30000),
+  KAIRO_MAX_PROVIDER_JOBS: z.coerce.number().int().min(1).max(64).default(8),
+  KAIRO_MAX_STREAM_JOBS: z.coerce.number().int().min(1).max(64).default(4),
+  KAIRO_MAX_FFMPEG_PROCESSES: z.coerce.number().int().min(1).max(64).default(8),
+  KAIRO_MAX_VOICE_SESSIONS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(1000)
+    .default(100),
   YOUTUBE_API_KEY: z.string().optional(),
   SPOTIFY_CLIENT_ID: z.string().optional(),
   SPOTIFY_CLIENT_SECRET: z.string().optional(),

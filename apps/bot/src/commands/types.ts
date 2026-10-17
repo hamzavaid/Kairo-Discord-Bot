@@ -15,11 +15,14 @@ import type {
 import type { MusicService } from '../services/MusicService.js';
 import type { LibraryService } from '../services/LibraryService.js';
 import type { AuditLog } from './AuditLog.js';
+import type { ScopedCollector } from '../bootstrap/reliability.js';
+import type { DiagnosticsService } from '../services/DiagnosticsService.js';
 
 export type CommandCategory =
   'Music' | 'Library' | 'Utility' | 'Developer' | 'Games';
 
 export interface CommandServices {
+  diagnostics?: DiagnosticsService;
   games?: GameService;
   music: MusicService;
   audit: AuditLog;
@@ -38,6 +41,8 @@ export interface CommandServices {
 }
 
 export interface CommandExecutionContext extends CommandServices {
+  signal?: AbortSignal;
+  trackCollector?: (collector: ScopedCollector) => void;
   isDeveloper: boolean;
   commands: ReadonlyMap<string, SlashCommand>;
   reportComponentError?: (error: unknown, actorUserId?: string) => void;

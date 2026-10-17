@@ -19,7 +19,9 @@ export class CommandError extends Error {
       | 'VOTE_ALREADY_CAST'
       | 'VOTE_NOT_REQUIRED'
       | 'QUEUE_ENTRY_NOT_FOUND'
-      | 'DISCOVERY_UNAVAILABLE',
+      | 'DISCOVERY_UNAVAILABLE'
+      | 'DIAGNOSTICS_UNAVAILABLE'
+      | 'BOT_UNAVAILABLE',
     message: string,
     options?: ErrorOptions,
   ) {

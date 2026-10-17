@@ -79,5 +79,11 @@ export function createBotMusicOptions(environment: Environment): EngineOptions {
     maxCollectionItems: environment.MUSIC_MAX_COLLECTION_ITEMS,
     streamTimeoutMs: environment.MUSIC_STREAM_TIMEOUT_MS,
     ffmpegPath: environment.FFMPEG_PATH,
+    reliability: {
+      providerConcurrency: environment.KAIRO_MAX_PROVIDER_JOBS,
+      streamConcurrency: environment.KAIRO_MAX_STREAM_JOBS,
+      ffmpegProcesses: environment.KAIRO_MAX_FFMPEG_PROCESSES,
+      maxSessions: environment.KAIRO_MAX_VOICE_SESSIONS,
+    },
   };
 }

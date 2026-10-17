@@ -99,6 +99,7 @@ export class LibraryMenu {
         i.user.id === this.owner &&
         this.action(i.customId) !== undefined,
     });
+    this.context.trackCollector?.(collector);
     collector.on('collect', (i) => {
       if (!this.active || i.user.id !== this.owner) return;
       const action = this.action(i.customId);

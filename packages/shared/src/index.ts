@@ -10,4 +10,5 @@ export {
   OperationError,
   WorkScope,
   FairLimiter,
+  withOperation,
 } from './reliability/work.js';

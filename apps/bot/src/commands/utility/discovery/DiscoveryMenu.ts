@@ -148,6 +148,7 @@ export class DiscoveryMenu {
           `${this.prefix}:close`,
         ].includes(b.customId),
     });
+    this.context.trackCollector?.(collector);
     collector.on('collect', (b) => {
       if (!this.active || b.user.id !== this.interaction.user.id) return;
       if (b.customId === `${this.prefix}:close`) {

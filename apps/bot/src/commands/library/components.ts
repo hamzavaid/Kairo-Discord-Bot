@@ -88,6 +88,7 @@ export async function pages(
       (i.customId === `${id}:0` || i.customId === `${id}:1`),
   });
   let pending = Promise.resolve();
+  context.trackCollector?.(collector);
   collector.on('collect', (i) => {
     pending = pending
       .then(async () => {
@@ -130,6 +131,7 @@ export async function confirm(
       i.user.id === interaction.user.id &&
       (i.customId === `${id}:0` || i.customId === `${id}:1`),
   });
+  context.trackCollector?.(collector);
   collector.on('collect', (i) => {
     if (settled || i.user.id !== interaction.user.id || !i.isButton()) return;
     settled = true;

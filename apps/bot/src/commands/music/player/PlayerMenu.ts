@@ -170,6 +170,7 @@ export class PlayerMenu {
         (this.shared || i.user.id === this.interaction.user.id) &&
         this.action(i.customId) !== undefined,
     });
+    this.context.trackCollector?.(collector);
     collector.on('collect', (i) => {
       if (
         !this.state.active ||

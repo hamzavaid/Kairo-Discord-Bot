@@ -141,6 +141,7 @@ export class GameMenu {
         i.guildId === this.interaction.guildId &&
         i.customId.startsWith(`kairo:game:${this.game.options.id}:`),
     });
+    this.context.trackCollector?.(collector);
     collector.on('collect', (i) => {
       void this.act(i)
         .then(() => this.edit())

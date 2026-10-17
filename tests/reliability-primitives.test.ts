@@ -2,9 +2,26 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   FairLimiter,
   WorkScope,
+  withOperation,
 } from '../packages/shared/src/reliability/work.js';
 
 describe('bounded cancellable work', () => {
+  it('propagates interaction cancellation through nested service scopes', async () => {
+    const parent = new AbortController();
+    const scope = new WorkScope();
+    let signal!: AbortSignal;
+    const job = withOperation(parent.signal, () =>
+      scope.run(async (active) => {
+        signal = active;
+        return new Promise<never>(() => {});
+      }),
+    );
+    await Promise.resolve();
+    parent.abort();
+    await expect(job).rejects.toMatchObject({ code: 'OPERATION_CANCELLED' });
+    expect(signal.aborted).toBe(true);
+    scope.close();
+  });
   it('cancels a noncooperative job and observes late failure without leaking work', async () => {
     const scope = new WorkScope(1000);
     let reject!: (reason: Error) => void;

@@ -1,3 +1,10 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+const operation = new AsyncLocalStorage<AbortSignal>();
+export function withOperation<T>(signal: AbortSignal, work: () => T): T {
+  return operation.run(signal, work);
+}
+
 export class OperationError extends Error {
   constructor(
     readonly code:
@@ -91,10 +98,12 @@ export class WorkScope {
       () => controller.abort(new OperationError('OPERATION_TIMEOUT')),
       timeoutMs,
     );
+    const parent = operation.getStore();
     const combined = AbortSignal.any([
       this.signal,
       controller.signal,
       ...(signal ? [signal] : []),
+      ...(parent ? [parent] : []),
     ]);
     try {
       return await abortable(

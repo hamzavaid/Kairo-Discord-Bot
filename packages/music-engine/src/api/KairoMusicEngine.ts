@@ -393,11 +393,11 @@ export function createKairoMusicEngine(
       event.matchConfidence !== undefined
     )
       metrics.observe('candidate_match_score', event.matchConfidence);
-    if (event.type === 'playbackFailed')
-      metrics.increment('stream_resolution_failures_total');
     for (const listener of listeners.get(event.type) ?? []) {
       try {
-        listener(event);
+        const result: unknown = listener(event);
+        if (result && typeof result === 'object' && 'then' in result)
+          void Promise.resolve(result).catch(() => {});
       } catch {
         // A client callback cannot change the parser result or suppress other subscribers.
       }
@@ -623,7 +623,6 @@ export function createKairoMusicEngine(
   return {
     getHealth() {
       metrics.set('active_voice_sessions', voice.snapshot().active);
-      metrics.set('active_background_jobs', work.active);
       const providers = supervisor.snapshot();
       return {
         status: closing
