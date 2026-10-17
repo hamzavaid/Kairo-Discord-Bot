@@ -260,6 +260,12 @@ export function createKairoMusicEngine(
       : { maxEntries: options.maxQueueEntries },
   );
   const voice = new VoiceManager({
+    onRecovery: (guildId, state) => {
+      if (state === 'recovering' || state === 'recovered') {
+        sessions.get(guildId)?.recoverVoice(state === 'recovering');
+        previews.get(guildId)?.session.recoverVoice(state === 'recovering');
+      }
+    },
     ...(options.playbackRuntime?.joinVoiceChannel
       ? { join: options.playbackRuntime.joinVoiceChannel }
       : {}),
@@ -267,11 +273,13 @@ export function createKairoMusicEngine(
       ? { waitReady: options.playbackRuntime.waitVoiceReady }
       : {}),
     onDisconnect: (guildId) => {
-      void lock(guildId).runExclusive(async () => {
-        await releasePreviewInternal(guildId, false);
-        sessions.get(guildId)?.disconnect();
-        await queues.stop(guildId);
-      });
+      void lock(guildId)
+        .runExclusive(async () => {
+          await releasePreviewInternal(guildId, false);
+          sessions.get(guildId)?.disconnect();
+          await queues.stop(guildId);
+        })
+        .catch(() => {});
     },
   });
   const resolver = new StreamResolver(
@@ -346,6 +354,18 @@ export function createKairoMusicEngine(
         'PLAYBACK_OWNED',
         'A music trivia game currently owns voice playback.',
       );
+  }
+  async function connectOwned(target: VoiceTarget) {
+    try {
+      return await voice.connect(target);
+    } catch (error) {
+      if (closing)
+        throw new MusicError(
+          'STREAM_CANCELLED',
+          'Voice join was cancelled during shutdown.',
+        );
+      throw error;
+    }
   }
   function preview(guildId: string, leaseId: string) {
     const value = previews.get(guildId);
@@ -652,11 +672,16 @@ export function createKairoMusicEngine(
           const defaults = await options.playbackDefaultsForGuild(
             target.guildId,
           );
+          assertMusicAvailable(target.guildId);
           active.setVolume(defaults.volume);
           active.setFilter(defaults.filter);
           await queues.setRepeat(target.guildId, defaults.repeat);
         }
-        const connection = await voice.connect(target);
+        const connection = await connectOwned(target);
+        if (closing) {
+          await voice.disconnect(target.guildId);
+          throw new MusicError('STREAM_CANCELLED', 'Voice join was cancelled.');
+        }
         active.attach(connection);
         sync(target.guildId, queues.snapshot(target.guildId));
         return active.snapshot();
@@ -721,7 +746,7 @@ export function createKairoMusicEngine(
             'STREAM_CANCELLED',
             'The engine is shutting down.',
           );
-        const connection = await voice.connect(target);
+        const connection = await connectOwned(target);
         if (closing) {
           await voice.disconnect(guildId);
           throw new MusicError(
@@ -1092,6 +1117,7 @@ export function createKairoMusicEngine(
     async shutdown() {
       closing = true;
       work.close();
+      const voiceClosing = voice.shutdown();
       for (const guildId of new Set([...sessions.keys(), ...previews.keys()])) {
         await lock(guildId).runExclusive(async () => {
           await releasePreviewInternal(guildId, false);
@@ -1100,7 +1126,7 @@ export function createKairoMusicEngine(
           await voice.disconnect(guildId);
         });
       }
-      await voice.shutdown();
+      await voiceClosing;
       sessions.clear();
       coordinator.clear();
       queues.shutdown();

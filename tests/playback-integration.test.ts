@@ -63,6 +63,12 @@ vi.mock('@discordjs/voice', async () => {
       Paused: 'paused',
     },
     VoiceConnectionStatus: { Ready: 'ready' },
+    VoiceConnectionDisconnectReason: {
+      WebSocketClose: 0,
+      AdapterUnavailable: 1,
+      EndpointRemoved: 2,
+      Manual: 3,
+    },
     StreamType: {
       Opus: 'opus',
       OggOpus: 'ogg/opus',

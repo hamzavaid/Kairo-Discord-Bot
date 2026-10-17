@@ -103,6 +103,8 @@ export class PlaybackSession {
   private activeFilter: FilterPreset = 'flat';
   private seekAbort: AbortController | undefined;
   private pauseOnReady = false;
+  private recoveringVoice = false;
+  private resumeAfterRecovery = false;
   private now() {
     return this.options.now?.() ?? performance.now();
   }
@@ -253,7 +255,8 @@ export class PlaybackSession {
     this.offsetMs = 0;
     this.resourceVersion = 0;
     this.sourceSeekable = false;
-    this.pauseOnReady = false;
+    this.pauseOnReady = this.recoveringVoice;
+    if (this.recoveringVoice) this.resumeAfterRecovery = true;
     this.attempt = {
       attemptId: randomUUID(),
       guildId: this.options.guildId,
@@ -540,6 +543,12 @@ export class PlaybackSession {
   }
 
   resume(): PlaybackSnapshot {
+    if (this.recoveringVoice)
+      throw new MusicError(
+        'RESOURCE_BUSY',
+        'Voice recovery is in progress.',
+        true,
+      );
     if (this.machine.state !== 'PAUSED' || !this.player.unpause())
       throw new MusicError(
         'INVALID_PLAYBACK_TRANSITION',
@@ -593,8 +602,28 @@ export class PlaybackSession {
     this.subscription?.unsubscribe();
     this.subscription = undefined;
     this.connection = undefined;
+    this.recoveringVoice = false;
+    this.resumeAfterRecovery = false;
     this.transition('DISCONNECTED');
     return this.snapshot();
+  }
+
+  recoverVoice(recovering: boolean): void {
+    if (recovering) {
+      if (this.recoveringVoice) return;
+      this.recoveringVoice = true;
+      this.resumeAfterRecovery = ['PLAYING', 'BUFFERING', 'RESOLVING'].includes(
+        this.machine.state,
+      );
+      if (this.machine.state === 'PLAYING') this.pause();
+      else if (this.resumeAfterRecovery) this.pauseOnReady = true;
+    } else {
+      this.recoveringVoice = false;
+      this.pauseOnReady = false;
+      if (this.resumeAfterRecovery && this.machine.state === 'PAUSED')
+        this.resume();
+      this.resumeAfterRecovery = false;
+    }
   }
 
   snapshot(): PlaybackSnapshot {
