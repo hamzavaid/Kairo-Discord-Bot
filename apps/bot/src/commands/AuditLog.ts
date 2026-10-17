@@ -25,6 +25,9 @@ export class AuditLog {
   async drain() {
     await this.writes.drain();
   }
+  close(): Promise<void> {
+    return this.writes.close();
+  }
   async persistedList(page = 1, limit = 10): Promise<CommandAudit[]> {
     await this.drain();
     try {

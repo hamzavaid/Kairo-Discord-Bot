@@ -58,6 +58,12 @@ export class QueueManager {
     if (!guildId) throw new MusicError('INVALID_QUERY', 'A guild is required.');
     return (this.queues.get(guildId) ?? new GuildQueue(guildId)).snapshot();
   }
+  depth(): number {
+    let total = 0;
+    for (const queue of this.queues.values())
+      total += queue.upcoming.length + Number(Boolean(queue.current));
+    return total;
+  }
 
   async enqueueMany(
     guildId: string,

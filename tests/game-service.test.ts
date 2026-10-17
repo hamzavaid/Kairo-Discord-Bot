@@ -231,6 +231,19 @@ it('uses the configured trivia limit for omitted rounds and does not block other
   ).resolves.toBeDefined();
   await service.close();
 });
+it('cleans remaining game collectors even if one closure fails', async () => {
+  const { service } = setup();
+  service.onClose(() => {
+    throw new Error('collector failure');
+  });
+  const close = vi.fn();
+  service.onClose(close);
+  await expect(service.close()).resolves.toBeUndefined();
+  expect(close).toHaveBeenCalledTimes(1);
+  await service.close();
+  expect(close).toHaveBeenCalledTimes(1);
+});
+
 it('drains admitted statistics writes before shutdown completes', async () => {
   const { service, repo, advance } = setup();
   let release!: () => void;

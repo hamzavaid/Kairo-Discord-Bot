@@ -7,9 +7,10 @@ import { RecommendationService } from './services/RecommendationService.js';
 import { AutoplayService } from './services/AutoplayService.js';
 import { StatisticsService } from './services/StatisticsService.js';
 import { existsSync } from 'node:fs';
+import { once } from 'node:events';
 import { Client, Events, GatewayIntentBits, REST } from 'discord.js';
 import { normalizeGuildControls, connectGuildSettings } from '@kairo/data';
-import { createKairoMusicEngine } from '@kairo/music-engine';
+import { createKairoMusicEngine, MusicError } from '@kairo/music-engine';
 import {
   createLogger,
   parseEnvironment,
@@ -256,7 +257,7 @@ async function main() {
     cleanup.length - 2,
     0,
     { name: 'history', run: () => history.close() },
-    { name: 'audit', run: () => audit.drain() },
+    { name: 'audit', run: () => audit.close() },
   );
 
   const rest = new REST({ version: '10' }).setToken(environment.DISCORD_TOKEN);
@@ -382,12 +383,11 @@ async function main() {
       {
         name: 'discord',
         required: true,
-        run: async () => {
-          const ready = new Promise<void>((resolve) =>
-            client.once(Events.ClientReady, () => resolve()),
-          );
-          await client.login(environment.DISCORD_TOKEN);
-          await ready;
+        run: async (signal) => {
+          await Promise.all([
+            once(client, Events.ClientReady, { signal }),
+            client.login(environment.DISCORD_TOKEN),
+          ]);
         },
       },
     ],
@@ -419,7 +419,12 @@ async function main() {
   logger.info({ clientId: client.user?.id }, 'Kairo ready');
 }
 
-void main().catch(() => {
+void main().catch((error: unknown) => {
+  if (
+    error instanceof MusicError &&
+    error.code === 'PROVIDER_CONFIGURATION_ERROR'
+  )
+    logger.fatal({ code: error.code }, error.message);
   logger.fatal(
     'Startup failed. Validate configured provider credentials, MongoDB connectivity, and dependency self-test results.',
   );

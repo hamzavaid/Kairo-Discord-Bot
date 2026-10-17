@@ -379,7 +379,14 @@ export class GameService {
   private async cleanup() {
     this.closing = true;
     this.preparation.close();
-    for (const fn of this.closers) fn();
+    const writesClosing = this.statistics.close();
+    for (const fn of this.closers) {
+      try {
+        fn();
+      } catch {
+        /* Continue stopping independent collectors and timers. */
+      }
+    }
     this.closers.clear();
     const active = [...this.active.values()];
     const cleanup = await Promise.allSettled(
@@ -395,7 +402,7 @@ export class GameService {
       }),
     );
     const persisted = await Promise.allSettled([...this.finishing]);
-    await this.statistics.close();
+    await writesClosing;
     this.active.clear();
     const failed = [...cleanup, ...persisted].find(
       (r) => r.status === 'rejected',

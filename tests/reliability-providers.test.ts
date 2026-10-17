@@ -2,6 +2,33 @@ import { expect, it, vi } from 'vitest';
 import { MusicError, createKairoMusicEngine } from '@kairo/music-engine';
 import { ProviderSupervisor } from '../packages/music-engine/src/reliability/ProviderSupervisor.js';
 import { boundedJson } from '../packages/music-engine/src/providers/metadata/transport.js';
+import { YoutubeSrProvider } from '../packages/music-engine/src/providers/metadata/YoutubeSrProvider.js';
+
+it('bounds raw unofficial SDK calls even when canceled transports ignore AbortSignal', async () => {
+  const finishes: ((value: unknown[]) => void)[] = [];
+  const search = vi.fn(
+    () => new Promise<unknown[]>((resolve) => finishes.push(resolve)),
+  );
+  const provider = new YoutubeSrProvider({ search });
+  for (let n = 0; n < 8; n++) {
+    const controller = new AbortController();
+    const job = provider.search('fixture', 1, controller.signal);
+    const failed = expect(job).rejects.toMatchObject({
+      code: 'PARSER_CANCELLED',
+    });
+    await Promise.resolve();
+    controller.abort();
+    await failed;
+  }
+  await expect(provider.search('overflow', 1)).rejects.toMatchObject({
+    code: 'RESOURCE_BUSY',
+  });
+  expect(search).toHaveBeenCalledTimes(8);
+  for (const finish of finishes) finish([]);
+  await new Promise((resolve) => setImmediate(resolve));
+  search.mockResolvedValueOnce([]);
+  await expect(provider.search('recovered', 1)).resolves.toEqual([]);
+});
 
 it('does not send queued provider requests through an opened circuit', async () => {
   const supervisor = new ProviderSupervisor({

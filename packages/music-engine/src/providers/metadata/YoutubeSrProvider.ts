@@ -26,6 +26,7 @@ const videoSchema = z.object({
 });
 
 export class YoutubeSrProvider implements MediaProvider {
+  private rawRequests = 0;
   readonly id = 'youtube-sr';
   readonly capabilities = { search: true, trackUrl: true };
   constructor(private readonly options: YoutubeSrOptions = {}) {}
@@ -53,7 +54,34 @@ export class YoutubeSrProvider implements MediaProvider {
     };
   }
 
-  private async run<T>(work: Promise<T>, signal?: AbortSignal): Promise<T> {
+  private async run<T>(
+    start: () => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    if (signal?.aborted)
+      throw new MusicError(
+        'PARSER_CANCELLED',
+        'The music request was cancelled.',
+      );
+    if (this.rawRequests >= 8)
+      throw new MusicError(
+        'RESOURCE_BUSY',
+        'This metadata provider has too many outstanding requests.',
+        true,
+      );
+    this.rawRequests++;
+    let work: Promise<T>;
+    try {
+      work = start();
+    } catch (error) {
+      this.rawRequests--;
+      throw error;
+    }
+    void work
+      .finally(() => {
+        this.rawRequests--;
+      })
+      .catch(() => {});
     const timeout = new AbortController();
     const timer = setTimeout(
       () => timeout.abort(),
@@ -109,7 +137,9 @@ export class YoutubeSrProvider implements MediaProvider {
       );
     const getVideo =
       this.options.getVideo ?? ((url: string) => YouTube.getVideo(url));
-    return this.normalize(await this.run(getVideo(input.canonicalUrl), signal));
+    return this.normalize(
+      await this.run(() => getVideo(input.canonicalUrl), signal),
+    );
   }
 
   async search(
@@ -122,7 +152,8 @@ export class YoutubeSrProvider implements MediaProvider {
       ((text: string, options: { limit: number }) =>
         YouTube.search(text, { ...options, type: 'video' }));
     const raw = await this.run(
-      search(query, { limit: Math.max(MUSIC_SEARCH_POOL_SIZE, maxResults) }),
+      () =>
+        search(query, { limit: Math.max(MUSIC_SEARCH_POOL_SIZE, maxResults) }),
       signal,
     );
     const tracks = raw
@@ -159,7 +190,10 @@ export class YoutubeSrProvider implements MediaProvider {
         videos: z.array(z.unknown()),
       })
       .safeParse(
-        await this.run(getPlaylist(input.canonicalUrl, limit, signal), signal),
+        await this.run(
+          () => getPlaylist(input.canonicalUrl, limit, signal),
+          signal,
+        ),
       );
     if (!raw.success)
       throw new MusicError(

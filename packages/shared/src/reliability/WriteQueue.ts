@@ -6,6 +6,9 @@ export class WriteQueue {
   private size = 0;
   private blocked = false;
   private closed = false;
+  private dropping = false;
+  private active: AbortController | undefined;
+  private closing?: Promise<void>;
   constructor(
     private readonly capacity = 512,
     private readonly timeoutMs = 2000,
@@ -26,11 +29,12 @@ export class WriteQueue {
     this.size++;
     this.tail = this.tail
       .then(async () => {
-        if (this.blocked) {
+        if (this.blocked || this.dropping) {
           this.failure('RESOURCE_BUSY');
           return;
         }
         const controller = new AbortController();
+        this.active = controller;
         const timer = setTimeout(() => {
           this.blocked = true;
           controller.abort(new OperationError('OPERATION_TIMEOUT'));
@@ -47,6 +51,7 @@ export class WriteQueue {
           this.failure('OPERATION_TIMEOUT');
         } finally {
           clearTimeout(timer);
+          if (this.active === controller) this.active = undefined;
         }
       })
       .catch(() => {
@@ -60,8 +65,14 @@ export class WriteQueue {
   drain(): Promise<void> {
     return this.tail;
   }
-  close(): Promise<void> {
+  close(timeoutMs = 2500): Promise<void> {
+    if (this.closing) return this.closing;
     this.closed = true;
-    return this.drain();
+    const timer = setTimeout(() => {
+      this.dropping = true;
+      this.active?.abort(new OperationError('OPERATION_TIMEOUT'));
+    }, timeoutMs);
+    this.closing = this.drain().finally(() => clearTimeout(timer));
+    return this.closing;
   }
 }

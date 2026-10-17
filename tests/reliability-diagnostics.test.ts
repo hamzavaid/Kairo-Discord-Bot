@@ -76,7 +76,7 @@ it('registers all diagnostics and enforces developer authorization through the e
     audit: new AuditLog(),
     settings: {} as never,
     developerIds: new Set(['dev']),
-    diagnostics: { health } as never,
+    diagnostics: { health, metrics: () => [] } as never,
   });
   for (const name of ['health', 'providerstatus', 'sessioninfo'])
     expect(handler.registrationData().some((d) => d.name === name)).toBe(true);
@@ -88,13 +88,15 @@ it('registers all diagnostics and enforces developer authorization through the e
   } as never);
   expect(health).not.toHaveBeenCalled();
   expect(JSON.stringify(reply.mock.calls)).toContain('not authorized');
+  const editReply = vi.fn();
   await handler.execute({
     commandName: 'health',
     user: { id: 'dev' },
     reply,
     deferReply: vi.fn(),
-    editReply: vi.fn(),
+    editReply,
   } as never);
   expect(health).toHaveBeenCalledTimes(1);
+  expect(JSON.stringify(editReply.mock.calls)).toContain('Kairo: healthy');
   handler.close();
 });

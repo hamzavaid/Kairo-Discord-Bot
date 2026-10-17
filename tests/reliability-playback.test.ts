@@ -123,7 +123,13 @@ it('shutdown during playing is idempotent and rejects late admissions', async ()
   await engine.connectVoice(target);
   await engine.enqueue({ guildId: 'g', track: track('a'), enqueuedBy: 'u' });
   await vi.waitFor(() => expect(player.plays).toBe(1));
+  expect(
+    engine.getHealth().metrics.find((m) => m.name === 'queue_depth')?.value,
+  ).toBe(1);
   await Promise.all([engine.shutdown(), engine.shutdown()]);
+  expect(
+    engine.getHealth().metrics.find((m) => m.name === 'queue_depth')?.value,
+  ).toBe(0);
   await expect(
     engine.enqueue({ guildId: 'g', track: track('b'), enqueuedBy: 'u' }),
   ).rejects.toMatchObject({ code: 'STREAM_CANCELLED' });

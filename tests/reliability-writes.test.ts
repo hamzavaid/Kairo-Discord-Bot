@@ -47,6 +47,23 @@ it('times out hung writes without allowing unbounded orphan database requests', 
     vi.useRealTimers();
   }
 });
+it('bounds shutdown drain and drops queued optional writes after the deadline', async () => {
+  vi.useFakeTimers();
+  try {
+    const queue = new WriteQueue(2, 1000);
+    const write = vi.fn(() => new Promise<void>(() => {}));
+    queue.add(write);
+    queue.add(write);
+    const closing = queue.close(10);
+    await vi.advanceTimersByTimeAsync(11);
+    await closing;
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(queue.add(write)).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
 it('history failure cannot reject an engine event and audits retain safe local fallback', async () => {
   let listener!: (event: unknown) => void;
   const history = new HistoryService(

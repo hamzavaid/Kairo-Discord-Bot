@@ -692,10 +692,7 @@ export function createKairoMusicEngine(
         'manual',
         signal,
       );
-      metrics.observe(
-        'queue_depth',
-        snapshot.upcoming.length + Number(Boolean(snapshot.current)),
-      );
+      metrics.set('queue_depth', queues.depth());
       sync(request.guildId, snapshot);
       return snapshot;
     });
@@ -703,6 +700,7 @@ export function createKairoMusicEngine(
 
   return {
     getHealth() {
+      metrics.set('queue_depth', queues.depth());
       metrics.set('active_voice_sessions', voice.snapshot().active);
       const providers = supervisor.snapshot();
       return {
