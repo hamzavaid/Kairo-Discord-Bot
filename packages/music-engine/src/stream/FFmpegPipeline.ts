@@ -12,8 +12,11 @@ import {
   type FilterPreset,
 } from '../playback/PlaybackControls.js';
 import { MusicError } from '../api/errors.js';
+import type { ProcessRegistry } from '../reliability/ProcessRegistry.js';
 
 export interface FFmpegOptions {
+  resources?: ProcessRegistry;
+  owner?: string;
   executable?: string;
   spawn?: typeof nodeSpawn;
 }
@@ -21,7 +24,7 @@ export interface FFmpegOptions {
 export class FFmpegPipeline {
   private readonly spawn: typeof nodeSpawn;
   private readonly executable: string;
-  constructor(options: FFmpegOptions = {}) {
+  constructor(private readonly options: FFmpegOptions = {}) {
     this.spawn = options.spawn ?? nodeSpawn;
     this.executable = options.executable ?? 'ffmpeg';
   }
@@ -85,14 +88,23 @@ export class FFmpegPipeline {
     ];
     let child: ChildProcessWithoutNullStreams;
     try {
-      child = this.spawn(this.executable, args, {
-        shell: false,
-        windowsHide: true,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      }) as ChildProcessWithoutNullStreams;
-    } catch {
+      child = this.options.resources
+        ? this.options.resources.spawn(
+            'ffmpeg',
+            this.options.owner ?? 'local',
+            this.executable,
+            args,
+            this.spawn,
+          )
+        : (this.spawn(this.executable, args, {
+            shell: false,
+            windowsHide: true,
+            stdio: ['pipe', 'pipe', 'pipe'],
+          }) as ChildProcessWithoutNullStreams);
+    } catch (error) {
       if (source.kind === 'readable') source.input.destroy();
       source.dispose?.();
+      if (error instanceof MusicError) throw error;
       throw new MusicError('FFMPEG_ERROR', 'Audio conversion could not start.');
     }
     let closed = false;
@@ -105,14 +117,26 @@ export class FFmpegPipeline {
       child.stdout.destroy();
       child.stderr.destroy();
       try {
-        child.kill();
+        if (this.options.resources) this.options.resources.terminate(child);
+        else child.kill();
       } catch {
         // Cleanup remains idempotent when the process exits concurrently.
       }
     };
     // Drain diagnostics without retaining raw input or unbounded stderr.
     child.stderr.on('data', () => {});
-    child.on('error', dispose);
+    child.stdout.on('error', () => {});
+    const fail = () => {
+      if (!closed)
+        child.stdout.destroy(
+          new MusicError('FFMPEG_ERROR', 'Audio conversion failed.', true),
+        );
+      dispose();
+    };
+    child.on('error', fail);
+    child.on('exit', (code) => {
+      if (code !== 0 && !closed) fail();
+    });
     child.stdin.on('error', dispose);
     if (source.kind === 'readable') {
       source.input.on('error', () => {

@@ -5,6 +5,7 @@ import { restoreTrack, type LibraryService } from './LibraryService.js';
 import type { MusicService } from './MusicService.js';
 import type { RecommendationService } from './RecommendationService.js';
 import type { HistoryService } from './HistoryService.js';
+import { BackgroundJobs } from './BackgroundJobs.js';
 export const DISCOVERY_SECTIONS = [
   'recommended',
   'liked',
@@ -32,8 +33,20 @@ export class DiscoveryService {
     private readonly recommendations: RecommendationService,
     private readonly library: LibraryService,
     private readonly history: HistoryService,
+    private readonly jobs = new BackgroundJobs(),
   ) {}
   async load(
+    section: DiscoverySection,
+    request: DiscoveryRequest,
+  ): Promise<DiscoveryResult> {
+    return this.jobs.run(
+      'discovery',
+      request.guildId,
+      (signal) => this.resolve(section, { ...request, signal }),
+      request.signal,
+    );
+  }
+  private async resolve(
     section: DiscoverySection,
     request: DiscoveryRequest,
   ): Promise<DiscoveryResult> {

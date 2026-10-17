@@ -157,17 +157,34 @@ it.each(['disabled', 'failed', 'disconnected', 'empty'])(
 );
 
 it('cancels both query-seed resolution and recommendation candidate searches', async () => {
-  const signal = new AbortController().signal;
+  const abort = new AbortController();
+  const signal = abort.signal;
   const info = vi.fn(async () => track('seed'));
   const infoResults = vi.fn(async () => [track('new')]);
   const service = new RecommendationService({ info, infoResults } as never);
   await service.recommend({ query: 'seed', guildId: 'g', userId: 'u', signal });
-  expect(info).toHaveBeenCalledWith('seed', 'g', 'u', signal);
+  expect(info).toHaveBeenCalledWith('seed', 'g', 'u', expect.any(AbortSignal));
   expect(infoResults).toHaveBeenCalledWith(
     expect.any(String),
     'g',
     'u',
     25,
-    signal,
+    expect.any(AbortSignal),
   );
+  abort.abort();
+  expect(
+    (info.mock.calls[0] as unknown as [string, string, string, AbortSignal])[3]
+      .aborted,
+  ).toBe(true);
+  expect(
+    (
+      infoResults.mock.calls[0] as unknown as [
+        string,
+        string,
+        string,
+        number,
+        AbortSignal,
+      ]
+    )[4].aborted,
+  ).toBe(true);
 });

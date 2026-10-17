@@ -4,15 +4,12 @@ import type { AudioSource } from './AudioSource.js';
 import type { StreamProvider } from './StreamProvider.js';
 import type { StreamContext } from './AudioQuality.js';
 import { DEFAULT_AUDIO_QUALITY } from './AudioQuality.js';
+import { OperationError, type FairLimiter, type Metrics } from '@kairo/shared';
 
 function cancellable(
   work: Promise<AudioSource>,
   signal: AbortSignal,
 ): Promise<AudioSource> {
-  if (signal.aborted)
-    return Promise.reject(
-      new MusicError('STREAM_CANCELLED', 'Stream resolution was cancelled.'),
-    );
   return new Promise((resolve, reject) => {
     let cancelled = false;
     const onAbort = () => {
@@ -43,7 +40,11 @@ function cancellable(
 export class StreamResolver {
   constructor(
     private readonly providers: readonly StreamProvider[],
-    private readonly options: { timeoutMs?: number } = {},
+    private readonly options: {
+      timeoutMs?: number;
+      gate?: FairLimiter;
+      metrics?: Metrics;
+    } = {},
   ) {
     if (
       !Number.isFinite(options.timeoutMs ?? 8000) ||
@@ -78,7 +79,13 @@ export class StreamResolver {
       this.options.timeoutMs ?? 8000,
     );
     const combined = AbortSignal.any([signal, timeout.signal]);
+    let release: (() => void) | undefined;
     try {
+      if (this.options.gate)
+        release = await this.options.gate.acquire(
+          context?.guildId ?? 'local',
+          combined,
+        );
       return await cancellable(
         provider.resolveAudio(
           track,
@@ -88,6 +95,13 @@ export class StreamResolver {
         combined,
       );
     } catch (error) {
+      if (error instanceof OperationError && error.code === 'RESOURCE_BUSY')
+        throw new MusicError('RESOURCE_BUSY', error.message, true);
+      this.options.metrics?.increment(
+        signal.aborted
+          ? 'canceled_operations_total'
+          : 'stream_resolution_failures_total',
+      );
       if (signal.aborted)
         throw new MusicError(
           'STREAM_CANCELLED',
@@ -106,6 +120,7 @@ export class StreamResolver {
         true,
       );
     } finally {
+      release?.();
       clearTimeout(timer);
     }
   }

@@ -1,5 +1,7 @@
 import type { Track } from '@kairo/music-engine';
 import { CommandError } from '../errors.js';
+import { abortable } from '@kairo/shared';
+import { BackgroundJobs } from './BackgroundJobs.js';
 export type LyricsResult =
   | { kind: 'lyrics'; provider: string; text: string }
   | { kind: 'instrumental' | 'not-found'; provider: string };
@@ -47,7 +49,9 @@ export class LrcLibLyricsProvider implements LyricsProvider {
     let length = 0;
     try {
       while (true) {
-        const part = await reader.read();
+        const part = signal
+          ? await abortable(reader.read(), signal)
+          : await reader.read();
         if (part.done) break;
         length += part.value.length;
         if (length > 65536) {
@@ -88,8 +92,24 @@ export class LyricsService {
     private readonly providers: readonly LyricsProvider[] = [
       new LrcLibLyricsProvider(),
     ],
+    private readonly jobs = new BackgroundJobs(),
   ) {}
-  async get(track: Track, signal?: AbortSignal): Promise<LyricsResult> {
+  async get(
+    track: Track,
+    signal?: AbortSignal,
+    guildId = 'lyrics',
+  ): Promise<LyricsResult> {
+    return this.jobs.run(
+      'lyrics',
+      guildId,
+      (active) => this.resolve(track, active),
+      signal,
+    );
+  }
+  private async resolve(
+    track: Track,
+    signal: AbortSignal,
+  ): Promise<LyricsResult> {
     let failure: unknown;
     let notFound = false;
     for (const provider of this.providers) {

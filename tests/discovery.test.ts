@@ -26,7 +26,13 @@ describe('provider-neutral discovery prototype', () => {
     ).toHaveLength(1);
     expect(recent).toHaveBeenCalledWith({ userId: 'u' }, 100);
     await service.load('search', { guildId: 'g', userId: 'u', query: 'Song' });
-    expect(infoResults).toHaveBeenCalledWith('Song', 'g', 'u', 25, undefined);
+    expect(infoResults).toHaveBeenCalledWith(
+      'Song',
+      'g',
+      'u',
+      25,
+      expect.any(AbortSignal),
+    );
     expect(
       (await service.load('artists', { guildId: 'g', userId: 'u' })).tracks,
     ).toHaveLength(1);

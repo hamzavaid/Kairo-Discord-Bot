@@ -9,6 +9,7 @@ import {
 } from '@kairo/data';
 import type { Track, VoiceTarget } from '@kairo/music-engine';
 import type { MusicService } from './MusicService.js';
+import { BackgroundJobs } from './BackgroundJobs.js';
 
 export function libraryPage<T>(
   items: readonly T[],
@@ -65,6 +66,7 @@ export class LibraryService {
   constructor(
     private readonly repository: LibraryRepository,
     private readonly music: MusicService,
+    private readonly jobs = new BackgroundJobs(),
   ) {}
   create(owner: string, name: string) {
     return this.repository.create(owner, name);
@@ -144,9 +146,25 @@ export class LibraryService {
     name: string,
     url: string,
     guildId: string,
+    signal?: AbortSignal,
+  ) {
+    return this.jobs.run(
+      'collection',
+      guildId,
+      (active) => this.importResolved(owner, name, url, guildId, active),
+      signal,
+    );
+  }
+  private async importResolved(
+    owner: string,
+    name: string,
+    url: string,
+    guildId: string,
+    signal: AbortSignal,
   ) {
     playlistName(name);
-    const collection = await this.music.collection(url, guildId, owner);
+    const collection = await this.music.collection(url, guildId, owner, signal);
+    signal.throwIfAborted();
     try {
       await this.repository.get(owner, name);
     } catch (error) {

@@ -4,6 +4,7 @@ import { CommandError } from '../errors.js';
 import { restoreTrack, type LibraryService } from './LibraryService.js';
 import type { HistoryService } from './HistoryService.js';
 import type { MusicService } from './MusicService.js';
+import { BackgroundJobs } from './BackgroundJobs.js';
 export interface RecommendationRequest {
   guildId: string;
   userId: string;
@@ -17,8 +18,17 @@ export class RecommendationService {
     private readonly music: MusicService,
     private readonly history?: HistoryService,
     private readonly library?: LibraryService,
+    private readonly jobs = new BackgroundJobs(),
   ) {}
   async recommend(request: RecommendationRequest): Promise<Track[]> {
+    return this.jobs.run(
+      'recommendation',
+      request.guildId,
+      (signal) => this.resolve({ ...request, signal }),
+      request.signal,
+    );
+  }
+  private async resolve(request: RecommendationRequest): Promise<Track[]> {
     const check = () => {
       if (request.signal?.aborted)
         throw new CommandError(

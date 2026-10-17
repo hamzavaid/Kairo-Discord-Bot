@@ -26,12 +26,14 @@ import { FFmpegPipeline } from '../stream/FFmpegPipeline.js';
 import { StreamResolver } from '../stream/StreamResolver.js';
 import type { AudioQuality } from '../stream/AudioQuality.js';
 import { DEFAULT_AUDIO_QUALITY } from '../stream/AudioQuality.js';
+import type { ProcessRegistry } from '../reliability/ProcessRegistry.js';
 import {
   PlaybackStateMachine,
   type PlaybackState,
 } from './PlaybackStateMachine.js';
 
 export interface PlaybackSessionOptions {
+  resources?: ProcessRegistry;
   now?: () => number;
   onAttempt?: (attempt: PlaybackAttempt) => void;
   prepareTrack?: (track: Track, signal: AbortSignal) => Promise<Track>;
@@ -104,6 +106,7 @@ export class PlaybackSession {
   private seekAbort: AbortController | undefined;
   private pauseOnReady = false;
   private recoveringVoice = false;
+  private stateSince = Date.now();
   private resumeAfterRecovery = false;
   private now() {
     return this.options.now?.() ?? performance.now();
@@ -149,9 +152,12 @@ export class PlaybackSession {
       });
     this.manageInlineVolume = options.createResource === undefined;
     this.createResource = options.createResource ?? createAudioResource;
-    const pipeline = new FFmpegPipeline(
-      options.ffmpegPath ? { executable: options.ffmpegPath } : {},
-    );
+    const pipeline = new FFmpegPipeline({
+      ...(options.ffmpegPath ? { executable: options.ffmpegPath } : {}),
+      ...(options.resources
+        ? { resources: options.resources, owner: options.guildId }
+        : {}),
+    });
     this.prepare =
       options.prepare ??
       ((source, filter, offset, inlineVolume) =>
@@ -214,6 +220,7 @@ export class PlaybackSession {
       this.listeningSince = undefined;
     }
     this.machine.transition(next);
+    this.stateSince = Date.now();
     if (next === 'PLAYING') {
       this.listeningSince = this.now();
       if (this.attempt && !this.attempt.startedAt) {
@@ -624,6 +631,19 @@ export class PlaybackSession {
         this.resume();
       this.resumeAfterRecovery = false;
     }
+  }
+  watchdog(now: number, maxStallMs: number): boolean {
+    if (
+      ['RESOLVING', 'BUFFERING'].includes(this.machine.state) &&
+      now - this.stateSince > maxStallMs
+    ) {
+      this.fail(
+        new MusicError('STREAM_TIMEOUT', 'Playback preparation expired.', true),
+        this.generation,
+      );
+      return true;
+    }
+    return false;
   }
 
   snapshot(): PlaybackSnapshot {

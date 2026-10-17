@@ -9,6 +9,7 @@ import type {
 } from './MediaProvider.js';
 import { ProviderRegistry } from './ProviderRegistry.js';
 import { ProviderSupervisor } from '../reliability/ProviderSupervisor.js';
+import type { FairLimiter } from '@kairo/shared';
 
 export interface MetadataResponse<T> {
   provider: MediaProvider;
@@ -22,6 +23,7 @@ export class MetadataProviderManager {
     input: Extract<ClassifiedInput, { kind: 'provider-collection' }>,
     limit: number,
     signal?: AbortSignal,
+    guildId = 'local',
   ): Promise<MetadataResponse<ProviderCollection>> {
     const id =
       input.providerId === 'youtube-sr' && this.selected === 'youtube-api'
@@ -38,7 +40,9 @@ export class MetadataProviderManager {
     const combined = signal
       ? AbortSignal.any([signal, timeout.signal])
       : timeout.signal;
+    let release: (() => void) | undefined;
     try {
+      release = await this.collections?.acquire(guildId, combined);
       return {
         provider,
         value: await this.safe(
@@ -66,6 +70,7 @@ export class MetadataProviderManager {
         );
       throw error;
     } finally {
+      release?.();
       clearTimeout(timer);
     }
   }
@@ -75,6 +80,7 @@ export class MetadataProviderManager {
     private readonly fallback: readonly MetadataProviderId[],
     private readonly fixtureOverride = false,
     private readonly supervisor = new ProviderSupervisor(),
+    private readonly collections?: FairLimiter,
   ) {}
 
   async lookup(

@@ -9,6 +9,7 @@ import type { AudioSource } from './AudioSource.js';
 import type { AudioQuality, StreamContext } from './AudioQuality.js';
 import { DEFAULT_AUDIO_QUALITY } from './AudioQuality.js';
 import type { StreamProvider } from './StreamProvider.js';
+import type { ProcessRegistry } from '../reliability/ProcessRegistry.js';
 
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/u;
 const FORMAT_ID = /^[A-Za-z0-9._-]{1,100}$/u;
@@ -80,6 +81,7 @@ export function selectAudioFormat(
 }
 
 export interface YtDlpOptions {
+  resources?: ProcessRegistry;
   executable?: string;
   spawn?: typeof nodeSpawn;
   maxMetadataBytes?: number;
@@ -92,7 +94,7 @@ export class YtDlpStreamProvider implements StreamProvider {
   private readonly executable: string;
   private readonly maxMetadataBytes: number;
 
-  constructor(options: YtDlpOptions = {}) {
+  constructor(private readonly options: YtDlpOptions = {}) {
     this.spawn = options.spawn ?? nodeSpawn;
     this.executable = options.executable ?? 'yt-dlp';
     this.maxMetadataBytes = options.maxMetadataBytes ?? 8_388_608;
@@ -106,16 +108,28 @@ export class YtDlpStreamProvider implements StreamProvider {
     );
   }
 
-  private start(args: string[]): ChildProcessWithoutNullStreams {
+  private start(
+    args: string[],
+    owner = 'local',
+  ): ChildProcessWithoutNullStreams {
     try {
-      const child = this.spawn(this.executable, args, {
-        shell: false,
-        windowsHide: true,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      }) as ChildProcessWithoutNullStreams;
+      const child = this.options.resources
+        ? this.options.resources.spawn(
+            'yt-dlp',
+            owner,
+            this.executable,
+            args,
+            this.spawn,
+          )
+        : (this.spawn(this.executable, args, {
+            shell: false,
+            windowsHide: true,
+            stdio: ['pipe', 'pipe', 'pipe'],
+          }) as ChildProcessWithoutNullStreams);
       child.stdin.on('error', () => {});
       return child;
-    } catch {
+    } catch (error) {
+      if (error instanceof MusicError) throw error;
       throw new MusicError(
         'STREAM_UNAVAILABLE',
         'The audio source could not start.',
@@ -127,20 +141,24 @@ export class YtDlpStreamProvider implements StreamProvider {
   private async inspect(
     url: string,
     signal: AbortSignal,
+    owner?: string,
   ): Promise<AudioFormat[]> {
-    const child = this.start([
-      '--ignore-config',
-      '--no-plugin-dirs',
-      '--no-playlist',
-      '--no-warnings',
-      '--no-progress',
-      '--no-cache-dir',
-      '--js-runtimes',
-      'node',
-      '--dump-single-json',
-      '--',
-      url,
-    ]);
+    const child = this.start(
+      [
+        '--ignore-config',
+        '--no-plugin-dirs',
+        '--no-playlist',
+        '--no-warnings',
+        '--no-progress',
+        '--no-cache-dir',
+        '--js-runtimes',
+        'node',
+        '--dump-single-json',
+        '--',
+        url,
+      ],
+      owner,
+    );
     child.stdin.end();
     child.stderr.on('data', () => {});
     return new Promise((resolve, reject) => {
@@ -152,7 +170,7 @@ export class YtDlpStreamProvider implements StreamProvider {
         if (settled) return;
         settled = true;
         cleanup();
-        child.kill();
+        this.terminate(child);
         reject(error);
       };
       const onAbort = () =>
@@ -239,7 +257,7 @@ export class YtDlpStreamProvider implements StreamProvider {
     const quality = context?.audioQuality ?? DEFAULT_AUDIO_QUALITY;
     const url = `https://www.youtube.com/watch?v=${track.sourceId!}`;
     const selected = selectAudioFormat(
-      await this.inspect(url, signal),
+      await this.inspect(url, signal, context?.guildId),
       quality,
     );
     if (signal.aborted)
@@ -247,22 +265,25 @@ export class YtDlpStreamProvider implements StreamProvider {
         'STREAM_CANCELLED',
         'Stream resolution was cancelled.',
       );
-    const child = this.start([
-      '--ignore-config',
-      '--no-plugin-dirs',
-      '--no-playlist',
-      '--no-warnings',
-      '--no-progress',
-      '--no-cache-dir',
-      '--js-runtimes',
-      'node',
-      '--format',
-      selected.formatId,
-      '--output',
-      '-',
-      '--',
-      url,
-    ]);
+    const child = this.start(
+      [
+        '--ignore-config',
+        '--no-plugin-dirs',
+        '--no-playlist',
+        '--no-warnings',
+        '--no-progress',
+        '--no-cache-dir',
+        '--js-runtimes',
+        'node',
+        '--format',
+        selected.formatId,
+        '--output',
+        '-',
+        '--',
+        url,
+      ],
+      context?.guildId,
+    );
     child.stdin.end();
     child.stderr.on('data', () => {});
     let disposed = false;
@@ -273,7 +294,7 @@ export class YtDlpStreamProvider implements StreamProvider {
       child.stdout.destroy();
       child.stdin.destroy();
       child.stderr.destroy();
-      child.kill();
+      this.terminate(child);
     };
     signal.addEventListener('abort', dispose, { once: true });
     child.on('error', () => {
@@ -307,5 +328,15 @@ export class YtDlpStreamProvider implements StreamProvider {
       audioQuality: quality,
       dispose,
     };
+  }
+  private terminate(child: ChildProcessWithoutNullStreams) {
+    if (this.options.resources) this.options.resources.terminate(child);
+    else {
+      try {
+        child.kill();
+      } catch {
+        /* Concurrent exit. */
+      }
+    }
   }
 }
