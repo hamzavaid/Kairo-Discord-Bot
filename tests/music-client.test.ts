@@ -6,6 +6,7 @@ describe('bot music adapter', () => {
   it('forwards Discord-derived context through the engine public API', async () => {
     const parse = vi.fn().mockResolvedValue({ kind: 'search', candidates: [] });
     const engine = {
+      getHealth: vi.fn(),
       parse,
       preparePlayable: vi.fn(),
       canPlay: vi.fn(),

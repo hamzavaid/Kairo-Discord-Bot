@@ -36,6 +36,7 @@ export interface ProviderDiagnostics {
   provider?: string;
   operation?: string;
   httpStatus?: number;
+  retryAfterMs?: number;
   reason?: 'http-error' | 'invalid-response' | 'response-too-large';
 }
 

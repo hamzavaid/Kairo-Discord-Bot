@@ -8,6 +8,7 @@ import type {
   ProviderCollection,
 } from './MediaProvider.js';
 import { ProviderRegistry } from './ProviderRegistry.js';
+import { ProviderSupervisor } from '../reliability/ProviderSupervisor.js';
 
 export interface MetadataResponse<T> {
   provider: MediaProvider;
@@ -16,6 +17,7 @@ export interface MetadataResponse<T> {
 
 /** Owns selection and fallback. URL identity always wins over search preference. */
 export class MetadataProviderManager {
+  readonly handlesRetries = true;
   async collection(
     input: Extract<ClassifiedInput, { kind: 'provider-collection' }>,
     limit: number,
@@ -40,11 +42,12 @@ export class MetadataProviderManager {
       return {
         provider,
         value: await this.safe(
-          () =>
+          provider.id,
+          (active) =>
             provider.getCollection!(
               { ...input, providerId: id },
               limit,
-              combined,
+              active,
             ),
           combined,
         ),
@@ -71,6 +74,7 @@ export class MetadataProviderManager {
     private readonly selected: MetadataProviderId,
     private readonly fallback: readonly MetadataProviderId[],
     private readonly fixtureOverride = false,
+    private readonly supervisor = new ProviderSupervisor(),
   ) {}
 
   async lookup(
@@ -93,7 +97,8 @@ export class MetadataProviderManager {
         'This music source is not supported.',
       );
     const value = await this.safe(
-      () => provider.parse({ ...input, providerId: id }, signal),
+      provider.id,
+      (active) => provider.parse({ ...input, providerId: id }, active),
       signal,
     );
     validateProviderTrack(value);
@@ -124,7 +129,8 @@ export class MetadataProviderManager {
         );
       try {
         const value = await this.safe(
-          () => provider.search!(query, maxResults, signal),
+          provider.id,
+          (active) => provider.search!(query, maxResults, active),
           signal,
         );
         for (const track of value) validateProviderTrack(track);
@@ -163,7 +169,8 @@ export class MetadataProviderManager {
         'This music source is not supported.',
       );
     const value = await this.safe(
-      () => provider.search!(query, maxResults, signal),
+      provider.id,
+      (active) => provider.search!(query, maxResults, active),
       signal,
     );
     for (const track of value) validateProviderTrack(track);
@@ -171,11 +178,12 @@ export class MetadataProviderManager {
   }
 
   private async safe<T>(
-    operation: () => Promise<T>,
+    id: string,
+    operation: (signal: AbortSignal) => Promise<T>,
     signal?: AbortSignal,
   ): Promise<T> {
     try {
-      return await operation();
+      return await this.supervisor.run(id, operation, signal);
     } catch (error) {
       if (signal?.aborted)
         throw new MusicError(

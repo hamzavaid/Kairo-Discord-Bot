@@ -5,6 +5,7 @@ import type { MediaProvider, ProviderTrack } from '../MediaProvider.js';
 import { RequestGate, realSleep, type Sleep } from './RequestGate.js';
 import { parseRecording, parseSearch } from './schema.js';
 import { TimedCache } from './TimedCache.js';
+import { retryAfter } from '../metadata/transport.js';
 
 interface InternalOptions extends MusicBrainzOptions {
   now?: () => number;
@@ -114,14 +115,18 @@ export class MusicBrainzProvider implements MediaProvider {
     }
     const cached = this.metadataCache.get(input.sourceId);
     if (cached) return cached;
-    return this.load(`recording:${input.sourceId}`, async () => {
-      const url = new URL(`${API_ROOT}/${input.sourceId}`);
-      url.searchParams.set('fmt', 'json');
-      url.searchParams.set('inc', 'artist-credits');
-      const track = parseRecording(await this.fetchJson(url, signal));
-      this.metadataCache.set(input.sourceId, track, this.metadataCacheMs);
-      return track;
-    });
+    return this.load(
+      `recording:${input.sourceId}`,
+      async () => {
+        const url = new URL(`${API_ROOT}/${input.sourceId}`);
+        url.searchParams.set('fmt', 'json');
+        url.searchParams.set('inc', 'artist-credits');
+        const track = parseRecording(await this.fetchJson(url, signal));
+        this.metadataCache.set(input.sourceId, track, this.metadataCacheMs);
+        return track;
+      },
+      signal,
+    );
   }
 
   async search(
@@ -135,20 +140,28 @@ export class MusicBrainzProvider implements MediaProvider {
     const key = `${query.toLocaleLowerCase('en')}|${maxResults}`;
     const cached = this.searchCache.get(key);
     if (cached) return cached;
-    return this.load(`search:${key}`, async () => {
-      const url = new URL(API_ROOT);
-      url.searchParams.set('query', query);
-      url.searchParams.set('fmt', 'json');
-      url.searchParams.set('limit', String(maxResults));
-      url.searchParams.set('dismax', 'true');
-      const tracks = parseSearch(await this.fetchJson(url, signal));
-      this.searchCache.set(key, tracks, this.searchCacheMs);
-      return tracks;
-    });
+    return this.load(
+      `search:${key}`,
+      async () => {
+        const url = new URL(API_ROOT);
+        url.searchParams.set('query', query);
+        url.searchParams.set('fmt', 'json');
+        url.searchParams.set('limit', String(maxResults));
+        url.searchParams.set('dismax', 'true');
+        const tracks = parseSearch(await this.fetchJson(url, signal));
+        this.searchCache.set(key, tracks, this.searchCacheMs);
+        return tracks;
+      },
+      signal,
+    );
   }
 
-  private async load<T>(key: string, operation: () => Promise<T>): Promise<T> {
-    const existing = this.pending.get(key);
+  private async load<T>(
+    key: string,
+    operation: () => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    const existing = signal ? undefined : this.pending.get(key);
     if (existing) return existing as Promise<T>;
     const work = operation()
       .then((value) => {
@@ -166,8 +179,10 @@ export class MusicBrainzProvider implements MediaProvider {
         }
         throw error;
       })
-      .finally(() => this.pending.delete(key));
-    this.pending.set(key, work);
+      .finally(() => {
+        if (!signal) this.pending.delete(key);
+      });
+    if (!signal) this.pending.set(key, work);
     return work;
   }
 
@@ -193,7 +208,12 @@ export class MusicBrainzProvider implements MediaProvider {
               );
         if (!safe.retryable || attempt === this.maxAttempts) throw safe;
         try {
-          await this.sleep(250 * attempt, signal);
+          const wait = Math.max(
+            250 * 2 ** (attempt - 1),
+            safe.diagnostics?.retryAfterMs ?? 0,
+          );
+          if (wait >= this.timeoutMs) throw safe;
+          await this.sleep(wait, signal);
         } catch {
           if (signal?.aborted)
             throw new MusicError(
@@ -254,6 +274,11 @@ export class MusicBrainzProvider implements MediaProvider {
           'PROVIDER_UNAVAILABLE',
           'The music source is temporarily unavailable.',
           response.status === 429 || response.status >= 500,
+          undefined,
+          {
+            httpStatus: response.status,
+            ...retryAfter(response.headers.get('retry-after')),
+          },
         );
       }
       const payload = await this.readJson(response, signal);

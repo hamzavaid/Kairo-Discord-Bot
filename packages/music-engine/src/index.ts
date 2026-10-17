@@ -46,6 +46,11 @@ export type {
 } from './domain/Track.js';
 export type { TrackCollection } from './domain/TrackCollection.js';
 export const ENGINE_API_VERSION = 1;
+export type {
+  ReliabilityOptions,
+  EngineHealth,
+  ProviderHealth,
+} from './api/reliability.js';
 
 export type {
   FilterPreset,

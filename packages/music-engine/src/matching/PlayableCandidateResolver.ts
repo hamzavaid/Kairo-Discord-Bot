@@ -70,7 +70,11 @@ export class PlayableCandidateResolver {
     try {
       for (let index = 0; index < queries.length; index++) {
         let response;
-        for (let attempt = 0; attempt < 2; attempt++) {
+        for (
+          let attempt = 0;
+          attempt < (this.metadata.handlesRetries ? 1 : 2);
+          attempt++
+        ) {
           try {
             response = await this.metadata.searchOn(
               this.searchProvider,
@@ -82,6 +86,7 @@ export class PlayableCandidateResolver {
           } catch (error) {
             if (active.aborted) throw error;
             if (
+              this.metadata.handlesRetries ||
               attempt ||
               !(error instanceof MusicError) ||
               !error.retryable ||

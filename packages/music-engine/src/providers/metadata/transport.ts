@@ -63,7 +63,11 @@ export async function boundedJson(
         'The music source is temporarily unavailable.',
         response.status === 429 || response.status >= 500,
         undefined,
-        { httpStatus: response.status, reason: 'http-error' },
+        {
+          httpStatus: response.status,
+          reason: 'http-error',
+          ...retryAfter(response.headers.get('retry-after')),
+        },
       );
     if (!response.headers.get('content-type')?.includes('application/json'))
       throw new MusicError(
@@ -127,4 +131,14 @@ export async function boundedJson(
   } finally {
     clearTimeout(timer);
   }
+}
+
+export function retryAfter(value: string | null): { retryAfterMs?: number } {
+  if (!value) return {};
+  const delay = /^\d+(?:\.\d+)?$/u.test(value.trim())
+    ? Number(value) * 1000
+    : Date.parse(value) - Date.now();
+  return Number.isFinite(delay) && delay >= 0
+    ? { retryAfterMs: Math.min(delay, 86_400_000) }
+    : {};
 }

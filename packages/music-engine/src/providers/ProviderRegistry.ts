@@ -53,4 +53,7 @@ export class ProviderRegistry {
       .filter((provider) => provider.capabilities.search && provider.search)
       .sort((left, right) => rank(left.id) - rank(right.id));
   }
+  ids(): string[] {
+    return [...this.providers.keys()];
+  }
 }

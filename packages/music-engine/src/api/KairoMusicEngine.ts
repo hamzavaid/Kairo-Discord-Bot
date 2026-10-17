@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { WorkScope, OperationError } from '@kairo/shared';
+import { WorkScope, OperationError, Metrics } from '@kairo/shared';
+import { ProviderSupervisor } from '../reliability/ProviderSupervisor.js';
+import type { ReliabilityOptions, EngineHealth } from './reliability.js';
 import {
   validateVolume,
   validateFilter,
@@ -63,6 +65,8 @@ import type {
 } from '../matching/types.js';
 
 export interface EngineOptions {
+  metrics?: Metrics;
+  reliability?: ReliabilityOptions;
   playbackDefaultsForGuild?: (
     guildId: string,
   ) => Promise<{ volume: number; filter: FilterPreset; repeat: RepeatMode }>;
@@ -95,6 +99,7 @@ export interface EngineOptions {
 }
 
 export interface KairoMusicEngine {
+  getHealth(): EngineHealth;
   parse(request: ParseRequest): Promise<ParseResult>;
   preparePlayable(track: Track, signal?: AbortSignal): Promise<Track>;
   canPlay(track: import('../domain/Track.js').Track): boolean;
@@ -177,6 +182,7 @@ export function createKairoMusicEngine(
 ): KairoMusicEngine {
   const maxCollectionItems = options.maxCollectionItems ?? 200;
   const work = new WorkScope(30_000);
+  const metrics = options.metrics ?? new Metrics();
   if (
     !Number.isInteger(maxCollectionItems) ||
     maxCollectionItems < 1 ||
@@ -226,11 +232,25 @@ export function createKairoMusicEngine(
       );
     registry.register(new MusicBrainzProvider(options.musicBrainz));
   }
+  const supervisor = new ProviderSupervisor({
+    metrics,
+    ...(options.reliability?.providerAttempts !== undefined
+      ? { attempts: options.reliability.providerAttempts }
+      : {}),
+    ...(options.reliability?.circuitFailures !== undefined
+      ? { failureThreshold: options.reliability.circuitFailures }
+      : {}),
+    ...(options.reliability?.circuitCooldownMs !== undefined
+      ? { cooldownMs: options.reliability.circuitCooldownMs }
+      : {}),
+  });
+  registry.ids().forEach((id) => supervisor.register(id));
   const manager = new MetadataProviderManager(
     registry,
     selected,
     options.fallbackProviders ?? [],
     Boolean(options.fixtureTracks && !options.metadataProvider),
+    supervisor,
   );
   const matcher = new CandidateMatcher({
     ...(options.matchThreshold === undefined
@@ -521,6 +541,22 @@ export function createKairoMusicEngine(
   }
 
   return {
+    getHealth() {
+      const providers = supervisor.snapshot();
+      return {
+        status: closing
+          ? 'closed'
+          : providers.some((p) => p.circuit !== 'CLOSED')
+            ? 'degraded'
+            : 'healthy',
+        providers,
+        resources: {
+          activeVoiceSessions: voice.snapshot().active,
+          pendingOperations: work.active,
+        },
+        metrics: metrics.snapshot(),
+      };
+    },
     preparePlayable(track, signal) {
       return work
         .run((active) => playable.prepare(track, active), signal)
@@ -951,9 +987,13 @@ export function createKairoMusicEngine(
       });
     },
     matchCandidates(request) {
-      return matcher.match(request);
+      const result = matcher.match(request);
+      metrics.observe('candidate_match_score', result.score);
+      return result;
     },
     async parse(request) {
+      const started = performance.now();
+      metrics.increment('parser_requests_total');
       return work
         .run(async (signal) => {
           request = { ...request, signal };
@@ -1104,7 +1144,10 @@ export function createKairoMusicEngine(
             throw safeError;
           }
         }, request.signal)
-        .catch(cancelError);
+        .catch(cancelError)
+        .finally(() =>
+          metrics.observe('parser_latency_ms', performance.now() - started),
+        );
     },
     on(type, listener) {
       const bucket =
@@ -1117,6 +1160,7 @@ export function createKairoMusicEngine(
     async shutdown() {
       closing = true;
       work.close();
+      supervisor.close();
       const voiceClosing = voice.shutdown();
       for (const guildId of new Set([...sessions.keys(), ...previews.keys()])) {
         await lock(guildId).runExclusive(async () => {
