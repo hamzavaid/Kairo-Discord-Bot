@@ -12,7 +12,10 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 export interface VoiceManagerOptions {
   join?: typeof joinVoiceChannel;
-  waitReady?: (connection: VoiceConnection) => Promise<VoiceConnection>;
+  waitReady?: (
+    connection: VoiceConnection,
+    signal?: AbortSignal,
+  ) => Promise<VoiceConnection>;
   timeoutMs?: number;
   onDisconnect?: (guildId: string) => void;
   recoveryAttempts?: number;
@@ -34,17 +37,18 @@ export class VoiceManager {
   private readonly join: typeof joinVoiceChannel;
   private readonly waitReady: (
     connection: VoiceConnection,
+    signal?: AbortSignal,
   ) => Promise<VoiceConnection>;
 
   constructor(private readonly options: VoiceManagerOptions = {}) {
     this.join = options.join ?? joinVoiceChannel;
     this.waitReady =
       options.waitReady ??
-      ((connection) =>
+      ((connection, signal) =>
         entersState(
           connection,
           VoiceConnectionStatus.Ready,
-          options.timeoutMs ?? 15_000,
+          signal ?? options.timeoutMs ?? 15_000,
         ));
   }
 
@@ -85,8 +89,11 @@ export class VoiceManager {
       });
       this.connections.set(target.guildId, connection);
       await this.scope.run(
-        () => this.waitReady(connection!),
-        abort.signal,
+        (signal) => this.waitReady(connection!, signal),
+        AbortSignal.any([
+          abort.signal,
+          ...(target.signal ? [target.signal] : []),
+        ]),
         this.options.timeoutMs ?? 15_000,
       );
     } catch {
@@ -103,7 +110,7 @@ export class VoiceManager {
         'Could not join the voice channel.',
         true,
       );
-    if (this.closing || abort.signal.aborted) {
+    if (this.closing || abort.signal.aborted || target.signal?.aborted) {
       this.finish(target.guildId, connection, false);
       throw new MusicError('VOICE_JOIN_ERROR', 'Voice join was cancelled.');
     }
@@ -177,7 +184,7 @@ export class VoiceManager {
             );
           if (!connection.rejoin()) continue;
           await this.scope.run(
-            () => this.waitReady(connection),
+            (signal) => this.waitReady(connection, signal),
             abort.signal,
             this.options.recoveryTimeoutMs ?? 3000,
           );
@@ -211,6 +218,9 @@ export class VoiceManager {
 
   get(guildId: string): VoiceConnection | undefined {
     return this.connections.get(guildId);
+  }
+  cancelJoin(guildId: string) {
+    if (this.pending.has(guildId)) this.aborts.get(guildId)?.abort();
   }
 
   async disconnect(guildId: string): Promise<void> {

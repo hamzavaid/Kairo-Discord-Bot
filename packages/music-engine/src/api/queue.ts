@@ -21,6 +21,7 @@ export interface QueueSnapshot {
 }
 
 export interface EnqueueRequest {
+  signal?: AbortSignal;
   guildId: string;
   track: Track;
   enqueuedBy: string;
@@ -29,6 +30,7 @@ export interface EnqueueRequest {
 }
 
 export interface EnqueueManyRequest {
+  signal?: AbortSignal;
   guildId: string;
   tracks: readonly Track[];
   enqueuedBy: string;

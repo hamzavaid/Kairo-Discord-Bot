@@ -4,7 +4,24 @@ import {
   runSelfTest,
   ShutdownCoordinator,
   UiLifecycle,
+  executableCheck,
 } from '../apps/bot/src/bootstrap/reliability.js';
+
+it('kills a startup executable when its check is canceled', async () => {
+  const child = Object.assign(new EventEmitter(), { kill: vi.fn() });
+  const signal = new AbortController();
+  const pending = executableCheck(
+    'fixture',
+    ['--version'],
+    signal.signal,
+    (() => child) as never,
+  );
+  const failed = expect(pending).rejects.toThrow('Executable check failed');
+  signal.abort();
+  await failed;
+  expect(child.kill).toHaveBeenCalledWith('SIGKILL');
+  child.emit('error', new Error('late failed process'));
+});
 import { databaseHealth } from '../packages/data/src/health.js';
 
 it('classifies required and optional startup checks without exposing internal failures', async () => {
@@ -130,4 +147,19 @@ it('isolates database health failures and bounds an unresponsive ping', async ()
   expect(await databaseHealth({ readyState: 0 } as never)).toEqual({
     status: 'unavailable',
   });
+  vi.useFakeTimers();
+  try {
+    const pending = databaseHealth(
+      {
+        readyState: 1,
+        db: { admin: () => ({ ping: () => new Promise(() => {}) }) },
+      } as never,
+      10,
+    );
+    await vi.advanceTimersByTimeAsync(11);
+    expect(await pending).toEqual({ status: 'unavailable' });
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
 });

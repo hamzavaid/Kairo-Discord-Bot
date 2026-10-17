@@ -45,5 +45,23 @@ describe('playback diagnostics', () => {
       { guildId: 'guild', generation: 2, code: 'STREAM_UNAVAILABLE' },
       'Playback failed',
     );
+    listeners.get('reliabilityDiagnostic')?.({
+      type: 'reliabilityDiagnostic',
+      subsystem: 'voice',
+      code: 'attempt',
+      guildId: 'guild',
+      token: 'secret',
+    } as never);
+    expect(logger.info).toHaveBeenCalledWith(
+      {
+        subsystem: 'voice',
+        code: 'attempt',
+        guildId: 'guild',
+        providerId: undefined,
+        count: undefined,
+      },
+      'Music reliability diagnostic',
+    );
+    expect(JSON.stringify(logger.info.mock.calls)).not.toContain('secret');
   });
 });

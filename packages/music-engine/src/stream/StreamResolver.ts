@@ -24,7 +24,11 @@ function cancellable(
       (value) => {
         signal.removeEventListener('abort', onAbort);
         if (cancelled || signal.aborted) {
-          value.dispose?.();
+          try {
+            value.dispose?.();
+          } catch {
+            /* The owning process watchdog remains a cleanup backstop. */
+          }
           return;
         }
         resolve(value);
@@ -86,17 +90,23 @@ export class StreamResolver {
           context?.guildId ?? 'local',
           combined,
         );
-      return await cancellable(
-        provider.resolveAudio(
-          track,
-          combined,
-          context ?? { audioQuality: DEFAULT_AUDIO_QUALITY },
-        ),
+      combined.throwIfAborted();
+      const physical = provider.resolveAudio(
+        track,
         combined,
+        context ?? { audioQuality: DEFAULT_AUDIO_QUALITY },
       );
+      if (release) {
+        const free = release;
+        release = undefined;
+        void physical.finally(free).catch(() => {});
+      }
+      return await cancellable(physical, combined);
     } catch (error) {
-      if (error instanceof OperationError && error.code === 'RESOURCE_BUSY')
+      if (error instanceof OperationError && error.code === 'RESOURCE_BUSY') {
+        this.options.metrics?.increment('backpressure_rejections_total');
         throw new MusicError('RESOURCE_BUSY', error.message, true);
+      }
       this.options.metrics?.increment(
         signal.aborted
           ? 'canceled_operations_total'

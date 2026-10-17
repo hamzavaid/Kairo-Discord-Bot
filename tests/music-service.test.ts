@@ -94,6 +94,7 @@ describe('Phase 6 MusicService', () => {
     expect(engine.preparePlayable).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'fixture:one' }),
       expect.any(AbortSignal),
+      'guild',
     );
     expect(engine.enqueue).toHaveBeenCalledWith({
       guildId: 'guild',

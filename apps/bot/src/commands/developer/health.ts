@@ -21,6 +21,12 @@ const command: SlashCommand = {
         health.resources,
       )
         .map(([key, value]) => `${key}: ${value}`)
+        .join('\n')}\nMetrics:\n${c.diagnostics
+        .metrics()
+        .map(
+          (m) =>
+            `${m.name}: ${m.count ? `${m.count} samples; mean ${(m.sum / m.count).toFixed(2)}` : m.value}`,
+        )
         .join('\n')}`,
       allowedMentions: { parse: [] },
     });

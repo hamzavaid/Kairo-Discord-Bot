@@ -10,6 +10,14 @@ interface ParseEventContext {
 
 export type KairoMusicEvent =
   | {
+      type: 'reliabilityDiagnostic';
+      subsystem: 'voice' | 'provider' | 'watchdog';
+      code: string;
+      guildId?: string;
+      providerId?: string;
+      count?: number;
+    }
+  | {
       type: 'queueExhausted';
       guildId: string;
       generation: number;

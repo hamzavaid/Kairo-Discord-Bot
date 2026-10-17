@@ -103,13 +103,15 @@ async function main() {
       music.close();
     },
   });
-  const history = new HistoryService(database.history, (error) =>
-    logger.error({ err: error }, 'History persistence failed'),
-  );
+  const history = new HistoryService(database.history, (error) => {
+    metrics.increment('persistence_failures_total');
+    logger.error({ err: error }, 'History persistence failed');
+  });
   history.attach(engine);
-  const audit = new AuditLog(500, database.audit, (error) =>
-    logger.error({ err: error }, 'Audit persistence failed'),
-  );
+  const audit = new AuditLog(500, database.audit, (error) => {
+    metrics.increment('persistence_failures_total');
+    logger.error({ err: error }, 'Audit persistence failed');
+  });
   const developerIds = new Set(developerIdsFromEnvironment(environment));
   const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
@@ -163,7 +165,17 @@ async function main() {
   };
 
   const library = new LibraryService(database.library, music, jobs);
-  const games = new GameService(database.games, music, library);
+  const games = new GameService(
+    database.games,
+    music,
+    library,
+    undefined,
+    undefined,
+    () => {
+      metrics.increment('persistence_failures_total');
+      logger.warn('Game statistics write unavailable');
+    },
+  );
   const recommendations = new RecommendationService(
     music,
     history,

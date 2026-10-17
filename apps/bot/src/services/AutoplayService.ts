@@ -5,6 +5,7 @@ import {
 import type { KairoMusicEngine, Track } from '@kairo/music-engine';
 import { CommandError } from '../errors.js';
 import type { RecommendationService } from './RecommendationService.js';
+import { WorkScope } from '@kairo/shared';
 export class AutoplayService {
   private readonly jobs = new Map<
     string,
@@ -12,6 +13,7 @@ export class AutoplayService {
   >();
   private readonly subscriptions: (() => void)[] = [];
   private closing = false;
+  private readonly scope = new WorkScope(10_000, 16);
   constructor(
     private readonly engine: KairoMusicEngine,
     private readonly settings: GuildSettingsRepository,
@@ -31,10 +33,19 @@ export class AutoplayService {
         const abort = new AbortController();
         const work = Promise.resolve()
           .then(() =>
-            this.fill(e.guildId, e.generation, e.seed, e.userId, abort),
+            this.scope.run(
+              () => this.fill(e.guildId, e.generation, e.seed, e.userId, abort),
+              abort.signal,
+            ),
           )
           .catch((error) => {
-            if (!abort.signal.aborted) this.report(error);
+            if (!abort.signal.aborted) {
+              try {
+                this.report(error);
+              } catch {
+                /* Optional logging must not reject a background job. */
+              }
+            }
           })
           .finally(() => {
             if (this.jobs.get(e.guildId)?.abort === abort)
@@ -67,6 +78,8 @@ export class AutoplayService {
     abort: AbortController,
   ) {
     if (
+      abort.signal.aborted ||
+      this.closing ||
       !normalizeGuildControls((await this.settings.get(guildId)).controls)
         .autoplay ||
       !this.canPlay(guildId)
@@ -118,6 +131,7 @@ export class AutoplayService {
   }
   async close() {
     this.closing = true;
+    this.scope.close();
     for (const off of this.subscriptions) off();
     for (const job of this.jobs.values()) job.abort.abort();
     await this.drain();

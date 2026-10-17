@@ -17,6 +17,7 @@ interface Owned {
 export class ProcessRegistry {
   private readonly pools: Record<Kind, FairLimiter>;
   private readonly owned = new Map<ChildProcessWithoutNullStreams, Owned>();
+  private readonly waiters = new Set<() => void>();
   constructor(
     limit = 8,
     private readonly metrics = new Metrics(),
@@ -86,6 +87,7 @@ export class ProcessRegistry {
       if (!this.owned.delete(child)) return;
       release();
       this.metrics.set('ffmpeg_processes', this.snapshot().ffmpeg);
+      for (const check of this.waiters) check();
     };
     const exited = (code: number | null) => {
       if (!record.stopping && code !== 0)
@@ -100,7 +102,11 @@ export class ProcessRegistry {
     };
     child.once('exit', exited);
     child.once('close', exited);
-    child.once('error', finish);
+    child.on('error', () => {});
+    child.once('error', () => {
+      if (child.pid === undefined) finish();
+      else this.terminate(child);
+    });
     this.metrics.set('ffmpeg_processes', this.snapshot().ffmpeg);
     return child;
   }
@@ -119,6 +125,7 @@ export class ProcessRegistry {
       this.owned.delete(child);
       record.release();
       this.metrics.set('ffmpeg_processes', this.snapshot().ffmpeg);
+      for (const check of this.waiters) check();
     }
   }
   sweep(ownerActive: (owner: string) => boolean): number {
@@ -147,5 +154,27 @@ export class ProcessRegistry {
   close() {
     for (const child of this.owned.keys()) this.terminate(child);
     Object.values(this.pools).forEach((pool) => pool.close());
+  }
+  drain(timeoutMs = 1000): Promise<void> {
+    if (!this.owned.size) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const finish = () => {
+        if (this.owned.size) return;
+        clearTimeout(timer);
+        this.waiters.delete(finish);
+        resolve();
+      };
+      const timer = setTimeout(() => {
+        this.waiters.delete(finish);
+        reject(
+          new MusicError(
+            'FFMPEG_ERROR',
+            'Media process exit could not be confirmed.',
+          ),
+        );
+      }, timeoutMs);
+      this.waiters.add(finish);
+      finish();
+    });
   }
 }

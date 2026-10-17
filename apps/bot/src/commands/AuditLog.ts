@@ -1,4 +1,5 @@
 import type { AuditRepository } from '@kairo/data';
+import { WriteQueue } from '@kairo/shared';
 export interface CommandAudit {
   command: string;
   guildId?: string;
@@ -13,28 +14,31 @@ export interface CommandAudit {
 export class AuditLog {
   private readonly records: CommandAudit[] = [];
 
-  private pending = Promise.resolve();
+  private readonly writes: WriteQueue;
   constructor(
     private readonly capacity = 500,
     private readonly repository?: AuditRepository,
     private readonly report: (error: unknown) => void = () => {},
-  ) {}
+  ) {
+    this.writes = new WriteQueue(512, 2000, report);
+  }
   async drain() {
-    await this.pending;
+    await this.writes.drain();
   }
   async persistedList(page = 1, limit = 10): Promise<CommandAudit[]> {
     await this.drain();
-    return this.repository
-      ? this.repository.list(page, limit)
-      : this.list(page, limit);
+    try {
+      return this.repository
+        ? await this.repository.list(page, limit)
+        : this.list(page, limit);
+    } catch {
+      return this.list(page, limit);
+    }
   }
 
   record(entry: CommandAudit): void {
     this.records.unshift({ ...entry });
-    if (this.repository)
-      this.pending = this.pending
-        .then(() => this.repository!.record(entry))
-        .catch((error) => this.report(error));
+    if (this.repository) this.writes.add(() => this.repository!.record(entry));
     if (this.records.length > this.capacity)
       this.records.length = this.capacity;
   }

@@ -19,6 +19,7 @@ export class ProviderSupervisor {
       sleep?: Sleep;
       random?: () => number;
       metrics?: Metrics;
+      onCircuit?: (id: string, state: ProviderHealth['circuit']) => void;
     } = {},
   ) {}
   private now() {
@@ -29,8 +30,14 @@ export class ProviderSupervisor {
       this.states.set(id, { id, circuit: 'CLOSED', failures: 0, probe: false });
   }
   private transition(state: State, circuit: State['circuit']) {
-    if (state.circuit !== circuit)
+    if (state.circuit !== circuit) {
       this.options.metrics?.increment('provider_circuit_changes_total');
+      try {
+        this.options.onCircuit?.(state.id, circuit);
+      } catch {
+        /* Diagnostics cannot interrupt recovery. */
+      }
+    }
     state.circuit = circuit;
   }
   snapshot(): ProviderHealth[] {
@@ -64,6 +71,14 @@ export class ProviderSupervisor {
           this.gate.run(
             id,
             async () => {
+              if (
+                (state.retryAt ?? 0) > this.now() ||
+                (state.circuit === 'OPEN' && !probe)
+              )
+                throw new MusicError(
+                  'PROVIDER_UNAVAILABLE',
+                  'This music provider is cooling down.',
+                );
               const started = this.now();
               // MusicBrainz owns its existing retry/throttle policy. Do not multiply it.
               const attempts =
@@ -94,8 +109,20 @@ export class ProviderSupervisor {
                   if (
                     attempt + 1 >= attempts ||
                     this.now() - started + wait >= timeoutMs
-                  )
+                  ) {
+                    // Set the cooldown before releasing admission to queued requests.
+                    if (
+                      probe ||
+                      state.failures + 1 >= (this.options.failureThreshold ?? 3)
+                    ) {
+                      this.transition(state, 'OPEN');
+                      state.retryAt = Math.max(
+                        state.retryAt ?? 0,
+                        this.now() + (this.options.cooldownMs ?? 30_000),
+                      );
+                    }
                     throw error;
+                  }
                   await (this.options.sleep ?? realSleep)(wait, active);
                 }
               }

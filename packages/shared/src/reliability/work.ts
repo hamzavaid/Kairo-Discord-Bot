@@ -1,6 +1,9 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 const operation = new AsyncLocalStorage<AbortSignal>();
+export function currentOperationSignal(): AbortSignal | undefined {
+  return operation.getStore();
+}
 export function withOperation<T>(signal: AbortSignal, work: () => T): T {
   return operation.run(signal, work);
 }
@@ -44,7 +47,11 @@ export function abortable<T>(
       (value) => {
         signal.removeEventListener('abort', abort);
         if (done) {
-          onLate?.(value);
+          try {
+            onLate?.(value);
+          } catch {
+            /* Observe failed late cleanup without rejecting an orphan promise. */
+          }
           return;
         }
         done = true;
@@ -109,7 +116,7 @@ export class WorkScope {
       return await abortable(
         Promise.resolve().then(() => {
           if (combined.aborted) throw new OperationError('OPERATION_CANCELLED');
-          return work(combined);
+          return withOperation(combined, () => work(combined));
         }),
         combined,
       );

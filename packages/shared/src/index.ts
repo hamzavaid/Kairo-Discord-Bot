@@ -1,5 +1,6 @@
 export { parseEnvironment, type Environment } from './config/environment.js';
 export { createLogger } from './logging/logger.js';
+export { WriteQueue } from './reliability/WriteQueue.js';
 export {
   Metrics,
   type MetricValue,
@@ -11,4 +12,5 @@ export {
   WorkScope,
   FairLimiter,
   withOperation,
+  currentOperationSignal,
 } from './reliability/work.js';

@@ -10,6 +10,18 @@ export function logPlaybackEvents(
   engine: Pick<KairoMusicEngine, 'on'>,
   logger: PlaybackLogger,
 ): void {
+  engine.on('reliabilityDiagnostic', (event) =>
+    logger.info(
+      {
+        subsystem: event.subsystem,
+        code: event.code,
+        guildId: event.guildId,
+        providerId: event.providerId,
+        count: event.count,
+      },
+      'Music reliability diagnostic',
+    ),
+  );
   engine.on('playbackSourceSelected', (event) =>
     logger.info(
       {

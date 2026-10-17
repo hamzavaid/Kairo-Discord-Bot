@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { WorkScope, OperationError, Metrics, FairLimiter } from '@kairo/shared';
+import {
+  WorkScope,
+  OperationError,
+  Metrics,
+  FairLimiter,
+  currentOperationSignal,
+} from '@kairo/shared';
 import { ProcessRegistry } from '../reliability/ProcessRegistry.js';
 import { ProviderSupervisor } from '../reliability/ProviderSupervisor.js';
 import type { ReliabilityOptions, EngineHealth } from './reliability.js';
@@ -102,7 +108,11 @@ export interface EngineOptions {
 export interface KairoMusicEngine {
   getHealth(): EngineHealth;
   parse(request: ParseRequest): Promise<ParseResult>;
-  preparePlayable(track: Track, signal?: AbortSignal): Promise<Track>;
+  preparePlayable(
+    track: Track,
+    signal?: AbortSignal,
+    guildId?: string,
+  ): Promise<Track>;
   canPlay(track: import('../domain/Track.js').Track): boolean;
   matchCandidates(request: MatchRequest): MatchResult;
   enqueue(request: EnqueueRequest): Promise<QueueSnapshot>;
@@ -260,6 +270,13 @@ export function createKairoMusicEngine(
   }
   const supervisor = new ProviderSupervisor({
     metrics,
+    onCircuit: (providerId, code) =>
+      emit({
+        type: 'reliabilityDiagnostic',
+        subsystem: 'provider',
+        providerId,
+        code,
+      }),
     ...(options.reliability?.providerAttempts !== undefined
       ? { attempts: options.reliability.providerAttempts }
       : {}),
@@ -308,6 +325,12 @@ export function createKairoMusicEngine(
   );
   const voice = new VoiceManager({
     onRecovery: (guildId, state) => {
+      emit({
+        type: 'reliabilityDiagnostic',
+        subsystem: 'voice',
+        guildId,
+        code: state,
+      });
       if (state === 'attempt') metrics.increment('reconnect_attempts_total');
       if (state === 'failed') metrics.increment('reconnect_failures_total');
       if (state === 'recovering' || state === 'recovered') {
@@ -360,6 +383,7 @@ export function createKairoMusicEngine(
   >();
   const sessions = new Map<string, PlaybackSession>();
   const coordinator = new Map<string, QueueMutex>();
+  const disconnectedAt = new Map<string, number>();
   const listeners = new Map<
     KairoMusicEvent['type'],
     Set<(event: KairoMusicEvent) => void>
@@ -368,20 +392,50 @@ export function createKairoMusicEngine(
   const watchdog = setInterval(() => {
     if (closing) return;
     for (const [guildId, active] of sessions) {
-      if (active.watchdog(Date.now(), limits.stuckSessionMs ?? 45_000))
+      if (active.watchdog(Date.now(), limits.stuckSessionMs ?? 45_000)) {
         metrics.increment('watchdog_cleanups_total');
+        emit({
+          type: 'reliabilityDiagnostic',
+          subsystem: 'watchdog',
+          guildId,
+          code: 'STALLED_SESSION',
+          count: 1,
+        });
+      }
       if (!voice.get(guildId) && active.snapshot().state !== 'DISCONNECTED')
         active.disconnect();
+      if (
+        active.snapshot().state === 'DISCONNECTED' &&
+        !previews.has(guildId)
+      ) {
+        const since = disconnectedAt.get(guildId) ?? Date.now();
+        disconnectedAt.set(guildId, since);
+        if (Date.now() - since >= 60_000 && !coordinator.get(guildId)?.busy) {
+          sessions.delete(guildId);
+          disconnectedAt.delete(guildId);
+          metrics.increment('watchdog_cleanups_total');
+        }
+      } else disconnectedAt.delete(guildId);
     }
     for (const value of previews.values())
       if (value.session.watchdog(Date.now(), limits.stuckSessionMs ?? 45_000))
         metrics.increment('watchdog_cleanups_total');
-    resources.sweep(
+    const reclaimed = resources.sweep(
       (guildId) =>
         Boolean(voice.get(guildId)) &&
         (sessions.get(guildId)?.snapshot().current !== undefined ||
           previews.has(guildId)),
     );
+    if (reclaimed)
+      emit({
+        type: 'reliabilityDiagnostic',
+        subsystem: 'watchdog',
+        code: 'ORPHAN_PROCESS',
+        count: reclaimed,
+      });
+    for (const [guildId, mutex] of coordinator)
+      if (!mutex.busy && !sessions.has(guildId) && !previews.has(guildId))
+        coordinator.delete(guildId);
   }, limits.watchdogIntervalMs ?? 5000);
   watchdog.unref();
 
@@ -403,10 +457,29 @@ export function createKairoMusicEngine(
       }
     }
   }
+  function admissionFailure(error: unknown): never {
+    if (error instanceof OperationError) {
+      if (error.code === 'RESOURCE_BUSY')
+        metrics.increment('backpressure_rejections_total');
+      if (error.code === 'OPERATION_CANCELLED')
+        metrics.increment('canceled_operations_total');
+    } else if (
+      error instanceof MusicError &&
+      ['PARSER_CANCELLED', 'STREAM_CANCELLED'].includes(error.code)
+    )
+      metrics.increment('canceled_operations_total');
+    return cancelError(error);
+  }
 
   function lock(guildId: string): QueueMutex {
     let mutex = coordinator.get(guildId);
     if (!mutex) {
+      if (coordinator.size >= 1000)
+        throw new MusicError(
+          'RESOURCE_BUSY',
+          'The guild work limit has been reached.',
+          true,
+        );
       mutex = new QueueMutex();
       coordinator.set(guildId, mutex);
     }
@@ -441,7 +514,7 @@ export function createKairoMusicEngine(
     try {
       return await voice.connect(target);
     } catch (error) {
-      if (closing)
+      if (closing || target.signal?.aborted)
         throw new MusicError(
           'STREAM_CANCELLED',
           'Voice join was cancelled during shutdown.',
@@ -603,13 +676,21 @@ export function createKairoMusicEngine(
   async function enqueueMany(
     request: EnqueueManyRequest,
   ): Promise<QueueSnapshot> {
+    const signal = request.signal ?? currentOperationSignal();
     return lock(request.guildId).runExclusive(async () => {
       assertMusicAvailable(request.guildId);
+      if (signal?.aborted)
+        throw new MusicError(
+          'STREAM_CANCELLED',
+          'Queue admission was cancelled.',
+        );
       const snapshot = await queues.enqueueMany(
         request.guildId,
         request.tracks,
         request.enqueuedBy,
         request.position,
+        'manual',
+        signal,
       );
       metrics.observe(
         'queue_depth',
@@ -627,7 +708,11 @@ export function createKairoMusicEngine(
       return {
         status: closing
           ? 'closed'
-          : providers.some((p) => p.circuit !== 'CLOSED')
+          : providers.some(
+                (p) =>
+                  p.circuit !== 'CLOSED' ||
+                  p.lastError === 'PROVIDER_AUTH_REQUIRED',
+              )
             ? 'degraded'
             : 'healthy',
         providers,
@@ -644,10 +729,18 @@ export function createKairoMusicEngine(
         metrics: metrics.snapshot(),
       };
     },
-    preparePlayable(track, signal) {
+    preparePlayable(track, signal, guildId = 'local') {
       return work
-        .run((active) => playable.prepare(track, active), signal)
-        .catch(cancelError);
+        .run(
+          (active) =>
+            metadataGate.run(
+              guildId,
+              () => playable.prepare(track, active),
+              active,
+            ),
+          signal,
+        )
+        .catch(admissionFailure);
     },
     canPlay(track) {
       return resolver.canResolve(track);
@@ -657,6 +750,7 @@ export function createKairoMusicEngine(
         guildId: request.guildId,
         tracks: [request.track],
         enqueuedBy: request.enqueuedBy,
+        ...(request.signal ? { signal: request.signal } : {}),
         ...(request.position === undefined
           ? {}
           : { position: request.position }),
@@ -665,6 +759,7 @@ export function createKairoMusicEngine(
     enqueueMany,
     enqueueAutoplay(request) {
       return lock(request.guildId).runExclusive(async () => {
+        if (closing || currentOperationSignal()?.aborted) return false;
         const queue = queues.snapshot(request.guildId);
         if (
           previews.has(request.guildId) ||
@@ -740,6 +835,7 @@ export function createKairoMusicEngine(
       });
     },
     stop(guildId, expectedGeneration) {
+      if (expectedGeneration === undefined) voice.cancelJoin(guildId);
       return lock(guildId).runExclusive(async () => {
         assertGeneration(guildId, expectedGeneration);
         sessions.get(guildId)?.stop();
@@ -753,9 +849,11 @@ export function createKairoMusicEngine(
       });
     },
     remove(request) {
+      assertMusicAvailable(request.guildId);
       return queues.remove(request);
     },
     move(request) {
+      assertMusicAvailable(request.guildId);
       return queues.move(request);
     },
     shuffle(guildId, expectedGeneration) {
@@ -785,7 +883,10 @@ export function createKairoMusicEngine(
       });
     },
     connectVoice(target) {
+      const signal = target.signal ?? currentOperationSignal();
       return lock(target.guildId).runExclusive(async () => {
+        if (signal?.aborted)
+          throw new MusicError('STREAM_CANCELLED', 'Voice join was cancelled.');
         assertMusicAvailable(target.guildId);
         const active = session(target.guildId);
         if (
@@ -796,12 +897,20 @@ export function createKairoMusicEngine(
             target.guildId,
           );
           assertMusicAvailable(target.guildId);
+          if (signal?.aborted)
+            throw new MusicError(
+              'STREAM_CANCELLED',
+              'Voice join was cancelled.',
+            );
           active.setVolume(defaults.volume);
           active.setFilter(defaults.filter);
           await queues.setRepeat(target.guildId, defaults.repeat);
         }
-        const connection = await connectOwned(target);
-        if (closing) {
+        const connection = await connectOwned({
+          ...target,
+          ...(signal ? { signal } : {}),
+        });
+        if (closing || signal?.aborted) {
           await voice.disconnect(target.guildId);
           throw new MusicError('STREAM_CANCELLED', 'Voice join was cancelled.');
         }
@@ -811,6 +920,7 @@ export function createKairoMusicEngine(
       });
     },
     disconnectVoice(guildId, expectedGeneration) {
+      if (expectedGeneration === undefined) voice.cancelJoin(guildId);
       return lock(guildId).runExclusive(async () => {
         assertGeneration(guildId, expectedGeneration, true);
         await releasePreviewInternal(guildId, false);
@@ -1251,7 +1361,7 @@ export function createKairoMusicEngine(
             release();
           }
         }, request.signal)
-        .catch(cancelError)
+        .catch(admissionFailure)
         .finally(() =>
           metrics.observe('parser_latency_ms', performance.now() - started),
         );
@@ -1273,25 +1383,42 @@ export function createKairoMusicEngine(
       metadataGate.close();
       streamGate.close();
       collectionGate.close();
+      resources.close();
+      let cleanupFailed = false;
+      for (const [guildId, value] of previews) {
+        try {
+          stopPreviewInternal(guildId);
+          if (value.expiry) clearTimeout(value.expiry);
+          value.session.disconnect();
+        } catch {
+          cleanupFailed = true;
+        }
+      }
+      previews.clear();
+      for (const active of sessions.values()) {
+        try {
+          active.disconnect();
+        } catch {
+          cleanupFailed = true;
+        }
+      }
       const voiceClosing = voice.shutdown();
       shutdownWork = (async () => {
-        for (const guildId of new Set([
-          ...sessions.keys(),
-          ...previews.keys(),
-        ])) {
-          await lock(guildId).runExclusive(async () => {
-            await releasePreviewInternal(guildId, false);
-            sessions.get(guildId)?.disconnect();
-            await queues.stop(guildId);
-            await voice.disconnect(guildId);
-          });
+        try {
+          await voiceClosing;
+          await resources.drain();
+          if (cleanupFailed)
+            throw new MusicError(
+              'STREAM_UNAVAILABLE',
+              'Some playback resources failed to close.',
+            );
+        } finally {
+          sessions.clear();
+          disconnectedAt.clear();
+          coordinator.clear();
+          queues.shutdown();
+          listeners.clear();
         }
-        await voiceClosing;
-        resources.close();
-        sessions.clear();
-        coordinator.clear();
-        queues.shutdown();
-        listeners.clear();
       })();
       return shutdownWork;
     },

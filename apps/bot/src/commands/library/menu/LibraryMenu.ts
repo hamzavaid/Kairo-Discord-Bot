@@ -1,3 +1,4 @@
+import { withOperation } from '@kairo/shared';
 import {
   MessageFlags,
   LabelBuilder,
@@ -39,6 +40,7 @@ const actions = new Set([
 const modalActions = new Set(['create', 'add', 'save', 'save-track']);
 /** One controller per message. No shared user state or second playback path. */
 export class LibraryMenu {
+  private readonly abort = new AbortController();
   private state: MenuState = { view: 'home', page: 1 };
   private data!: MenuData;
   private active = true;
@@ -123,7 +125,7 @@ export class LibraryMenu {
         return;
       }
       this.busy = true;
-      void this.execute(i, action)
+      void withOperation(this.abort.signal, () => this.execute(i, action))
         .catch((error) => this.failure(error, i))
         .finally(async () => {
           try {
@@ -136,6 +138,7 @@ export class LibraryMenu {
         });
     });
     collector.on('end', () => {
+      this.abort.abort();
       this.active = false;
       void this.interaction
         .editReply(this.render())

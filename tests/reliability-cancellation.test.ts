@@ -3,6 +3,42 @@ import { createKairoMusicEngine } from '@kairo/music-engine';
 import { MusicService } from '../apps/bot/src/services/MusicService.js';
 import { libraryTrack } from './helpers/libraryModel.js';
 
+it('stop while saved tracks connect cannot enqueue a late collection', async () => {
+  let finish!: () => void;
+  const client = {
+    getPlayback: () => ({ state: 'DISCONNECTED' }),
+    connectVoice: vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    ),
+    disconnectVoice: vi.fn(async () => ({})),
+    enqueueMany: vi.fn(),
+    stop: vi.fn(async () => ({})),
+  };
+  const service = new MusicService(client as never);
+  const job = service.playTracks({
+    guildId: 'g',
+    userId: 'u',
+    tracks: [libraryTrack],
+    voiceTarget: {
+      guildId: 'g',
+      channelId: 'v',
+      adapterCreator: (() => ({})) as never,
+    },
+  });
+  const failure = expect(job).rejects.toMatchObject({
+    code: 'PARSER_CANCELLED',
+  });
+  await vi.waitFor(() => expect(client.connectVoice).toHaveBeenCalled());
+  await service.stop('g');
+  finish();
+  await failure;
+  expect(client.enqueueMany).not.toHaveBeenCalled();
+  service.close();
+});
+
 it('shutdown aborts a parser request and rejects future parses even for a noncooperative adapter', async () => {
   const search = vi.fn(() => new Promise<never>(() => {}));
   const engine = createKairoMusicEngine({ youtubeSr: { search } });

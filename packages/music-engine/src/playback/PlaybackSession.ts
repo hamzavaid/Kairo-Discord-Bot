@@ -255,6 +255,7 @@ export class PlaybackSession {
       throw new MusicError('VOICE_JOIN_ERROR', 'Join a voice channel first.');
     if (this.entry && this.generation === generation) return;
     if (this.machine.state !== 'IDLE') this.stop();
+    this.suppressed.clear();
     this.entry = structuredClone(entry);
     this.listenedMs = 0;
     this.listeningSince = undefined;
@@ -588,11 +589,19 @@ export class PlaybackSession {
     this.seekAbort = undefined;
     this.abort?.abort();
     this.abort = undefined;
-    this.prepared?.dispose();
+    try {
+      this.prepared?.dispose();
+    } catch {
+      /* Cleanup must continue after a broken stream. */
+    }
     this.prepared = undefined;
     this.resource = undefined;
     this.transition('STOPPING');
-    this.player.stop(true);
+    try {
+      this.player.stop(true);
+    } catch {
+      /* Continue releasing owned state. */
+    }
     this.entry = undefined;
     this.sourceSeekable = false;
     this.offsetMs = 0;
@@ -606,7 +615,11 @@ export class PlaybackSession {
   disconnect(): PlaybackSnapshot {
     if (this.machine.state === 'DISCONNECTED') return this.snapshot();
     this.stop('disconnected');
-    this.subscription?.unsubscribe();
+    try {
+      this.subscription?.unsubscribe();
+    } catch {
+      /* A dead connection may already be unsubscribed. */
+    }
     this.subscription = undefined;
     this.connection = undefined;
     this.recoveringVoice = false;

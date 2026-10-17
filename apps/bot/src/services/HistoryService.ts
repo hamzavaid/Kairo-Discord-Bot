@@ -1,19 +1,20 @@
 import type { HistoryRepository, HistoryScope } from '@kairo/data';
 import type { KairoMusicEngine } from '@kairo/music-engine';
+import { WriteQueue } from '@kairo/shared';
 /** Serializes durable events; shutdown waits for admitted writes before Mongo closes. */
 export class HistoryService {
-  private pending = Promise.resolve();
+  private readonly writes: WriteQueue;
   private unsubscribe?: () => void;
   constructor(
     private readonly repository: HistoryRepository,
     private readonly report: (error: unknown) => void = () => {},
-  ) {}
+  ) {
+    this.writes = new WriteQueue(512, 2000, report);
+  }
   attach(engine: KairoMusicEngine): void {
     this.unsubscribe?.();
     this.unsubscribe = engine.on('playbackAttempt', (event) => {
-      this.pending = this.pending
-        .then(() => this.repository.record(event))
-        .catch((error) => this.report(error));
+      this.writes.add(() => this.repository.record(event));
     });
   }
   list(scope: HistoryScope, page = 1, limit = 10) {
@@ -23,10 +24,10 @@ export class HistoryService {
     return this.repository.scan(scope, limit);
   }
   async drain() {
-    await this.pending;
+    await this.writes.drain();
   }
   async close() {
     this.unsubscribe?.();
-    await this.drain();
+    await this.writes.close();
   }
 }

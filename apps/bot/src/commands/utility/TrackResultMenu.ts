@@ -1,4 +1,5 @@
 import { normalizeGuildControls } from '@kairo/data';
+import { withOperation } from '@kairo/shared';
 import {
   ActionRowBuilder,
   ButtonBuilder,
@@ -28,6 +29,7 @@ export async function showTrackResults(
     );
   let index = 0;
   let active = true;
+  const abort = new AbortController();
   const liked = new Set<number>();
   const prefix = `kairo:info:${interaction.id}`;
   const playbackAvailable = typeof context.music.playTracks === 'function';
@@ -123,145 +125,151 @@ export async function showTrackResults(
         : Promise.resolve();
     void acknowledgement.catch(() => {});
     pending = pending
-      .then(async () => {
-        await acknowledgement;
-        if (!active) return;
-        if (action === 'save') {
-          const id = `${prefix}:playlist:${selectedIndex}:${i.id}`;
-          await i.showModal(
-            new ModalBuilder()
-              .setCustomId(id)
-              .setTitle('Add song to playlist')
-              .addLabelComponents(
-                new LabelBuilder()
-                  .setLabel('Your playlist name')
-                  .setTextInputComponent(
-                    new TextInputBuilder()
-                      .setCustomId('name')
-                      .setStyle(TextInputStyle.Short)
-                      .setRequired(true)
-                      .setMaxLength(64),
-                  ),
-              ),
-          );
-          const submit = await i
-            .awaitModalSubmit({
-              time: 60000,
-              filter: (modal) =>
-                modal.user.id === interaction.user.id && modal.customId === id,
-            })
-            .catch(() => undefined);
-          if (!submit) return;
-          if (!active) {
-            await submit.reply({
-              content: 'This search has expired. Run /search again.',
-              flags: MessageFlags.Ephemeral,
-            });
+      .then(() =>
+        withOperation(abort.signal, async () => {
+          await acknowledgement;
+          if (!active) return;
+          if (action === 'save') {
+            const id = `${prefix}:playlist:${selectedIndex}:${i.id}`;
+            await i.showModal(
+              new ModalBuilder()
+                .setCustomId(id)
+                .setTitle('Add song to playlist')
+                .addLabelComponents(
+                  new LabelBuilder()
+                    .setLabel('Your playlist name')
+                    .setTextInputComponent(
+                      new TextInputBuilder()
+                        .setCustomId('name')
+                        .setStyle(TextInputStyle.Short)
+                        .setRequired(true)
+                        .setMaxLength(64),
+                    ),
+                ),
+            );
+            const submit = await i
+              .awaitModalSubmit({
+                time: 60000,
+                filter: (modal) =>
+                  modal.user.id === interaction.user.id &&
+                  modal.customId === id,
+              })
+              .catch(() => undefined);
+            if (!submit) return;
+            if (!active) {
+              await submit.reply({
+                content: 'This search has expired. Run /search again.',
+                flags: MessageFlags.Ephemeral,
+              });
+              return;
+            }
+            await submit.deferReply({ flags: MessageFlags.Ephemeral });
+            try {
+              const result = await library(context).addSaved(
+                interaction.user.id,
+                submit.fields.getTextInputValue('name'),
+                tracks[selectedIndex]!,
+              );
+              await submit.editReply({
+                content: result.added
+                  ? 'Added to your playlist.'
+                  : 'This song is already in the playlist.',
+              });
+            } catch (error) {
+              context.reportComponentError?.(error);
+              await submit.editReply({
+                content:
+                  context.componentErrorMessage?.(error) ??
+                  'The playlist could not be updated.',
+              });
+            }
             return;
           }
-          await submit.deferReply({ flags: MessageFlags.Ephemeral });
-          try {
-            const result = await library(context).addSaved(
-              interaction.user.id,
-              submit.fields.getTextInputValue('name'),
-              tracks[selectedIndex]!,
-            );
-            await submit.editReply({
-              content: result.added
-                ? 'Added to your playlist.'
-                : 'This song is already in the playlist.',
-            });
-          } catch (error) {
-            context.reportComponentError?.(error);
-            await submit.editReply({
-              content:
-                context.componentErrorMessage?.(error) ??
-                'The playlist could not be updated.',
-            });
+          if (action && !isLike) {
+            try {
+              if (context.policy && i.guildId)
+                context.policy.admit(
+                  i.guildId,
+                  i.user.id,
+                  'queue-add',
+                  i.channelId,
+                  normalizeGuildControls(
+                    (await context.settings.get(i.guildId)).controls,
+                  ),
+                );
+              const target = voiceTarget(i, context);
+              const selected = tracks[selectedIndex]!;
+              await context.music.playTracks({
+                guildId: target.guildId,
+                userId: i.user.id,
+                voiceTarget: target,
+                tracks: [selected],
+                ...(action === 'play-next'
+                  ? { position: 'next' as const }
+                  : {}),
+              });
+              await context.onVoiceActivity?.(target.guildId);
+              await i.followUp({
+                content:
+                  action === 'play-next'
+                    ? 'Queued to play next.'
+                    : 'Added to the queue; playback starts if idle.',
+                flags: MessageFlags.Ephemeral,
+                allowedMentions: { parse: [] },
+              });
+            } catch (error) {
+              context.reportComponentError?.(error);
+              await i.followUp({
+                content:
+                  context.componentErrorMessage?.(error) ??
+                  'The song could not be queued.',
+                flags: MessageFlags.Ephemeral,
+              });
+            }
+            return;
           }
-          return;
-        }
-        if (action && !isLike) {
-          try {
-            if (context.policy && i.guildId)
-              context.policy.admit(
-                i.guildId,
-                i.user.id,
-                'queue-add',
-                i.channelId,
-                normalizeGuildControls(
-                  (await context.settings.get(i.guildId)).controls,
-                ),
+          if (isLike) {
+            if (liked.has(selectedIndex)) return;
+            try {
+              const result = await library(context).likeSaved(
+                interaction.user.id,
+                tracks[selectedIndex]!,
               );
-            const target = voiceTarget(i, context);
-            const selected = tracks[selectedIndex]!;
-            await context.music.playTracks({
-              guildId: target.guildId,
-              userId: i.user.id,
-              voiceTarget: target,
-              tracks: [selected],
-              ...(action === 'play-next' ? { position: 'next' as const } : {}),
-            });
-            await context.onVoiceActivity?.(target.guildId);
-            await i.followUp({
-              content:
-                action === 'play-next'
-                  ? 'Queued to play next.'
-                  : 'Added to the queue; playback starts if idle.',
-              flags: MessageFlags.Ephemeral,
-              allowedMentions: { parse: [] },
-            });
-          } catch (error) {
-            context.reportComponentError?.(error);
-            await i.followUp({
-              content:
-                context.componentErrorMessage?.(error) ??
-                'The song could not be queued.',
-              flags: MessageFlags.Ephemeral,
-            });
+              liked.add(selectedIndex);
+              await i.editReply(render(!active));
+              await i.followUp({
+                content: result.added
+                  ? 'Liked: saved to your Liked Songs.'
+                  : 'You already liked this song.',
+                flags: MessageFlags.Ephemeral,
+                allowedMentions: { parse: [] },
+              });
+            } catch (error) {
+              context.reportComponentError?.(error);
+              await i.followUp({
+                content:
+                  context.componentErrorMessage?.(error) ??
+                  'The song could not be saved.',
+                flags: MessageFlags.Ephemeral,
+                allowedMentions: { parse: [] },
+              });
+            }
+            return;
           }
-          return;
-        }
-        if (isLike) {
-          if (liked.has(selectedIndex)) return;
-          try {
-            const result = await library(context).likeSaved(
-              interaction.user.id,
-              tracks[selectedIndex]!,
-            );
-            liked.add(selectedIndex);
-            await i.editReply(render(!active));
-            await i.followUp({
-              content: result.added
-                ? 'Liked: saved to your Liked Songs.'
-                : 'You already liked this song.',
-              flags: MessageFlags.Ephemeral,
-              allowedMentions: { parse: [] },
-            });
-          } catch (error) {
-            context.reportComponentError?.(error);
-            await i.followUp({
-              content:
-                context.componentErrorMessage?.(error) ??
-                'The song could not be saved.',
-              flags: MessageFlags.Ephemeral,
-              allowedMentions: { parse: [] },
-            });
-          }
-          return;
-        }
-        index = Math.max(
-          0,
-          Math.min(
-            tracks.length - 1,
-            index + (i.customId === `${prefix}:previous` ? -1 : 1),
-          ),
-        );
-        await i.update(render());
-      })
+          index = Math.max(
+            0,
+            Math.min(
+              tracks.length - 1,
+              index + (i.customId === `${prefix}:previous` ? -1 : 1),
+            ),
+          );
+          await i.update(render());
+        }),
+      )
       .catch((error) => context.reportComponentError?.(error));
   });
   collector.on('end', () => {
+    abort.abort();
     active = false;
     void pending
       .then(() => interaction.editReply(render(true)))

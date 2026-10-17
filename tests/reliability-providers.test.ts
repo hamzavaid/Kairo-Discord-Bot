@@ -3,6 +3,35 @@ import { MusicError, createKairoMusicEngine } from '@kairo/music-engine';
 import { ProviderSupervisor } from '../packages/music-engine/src/reliability/ProviderSupervisor.js';
 import { boundedJson } from '../packages/music-engine/src/providers/metadata/transport.js';
 
+it('does not send queued provider requests through an opened circuit', async () => {
+  const supervisor = new ProviderSupervisor({
+    attempts: 1,
+    failureThreshold: 1,
+  });
+  const reject: ((error: unknown) => void)[] = [];
+  const operation = vi.fn(
+    () =>
+      new Promise((_, no) => {
+        reject.push(no);
+      }),
+  );
+  const first = supervisor.run('youtube-api', operation);
+  const second = supervisor.run('youtube-api', operation);
+  const third = supervisor.run('youtube-api', operation);
+  const failures = [first, second, third].map((job) =>
+    expect(job).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE' }),
+  );
+  await vi.waitFor(() => expect(operation).toHaveBeenCalledTimes(2));
+  reject[0]!(new MusicError('PROVIDER_UNAVAILABLE', 'Unavailable', true));
+  await vi.waitFor(() =>
+    expect(supervisor.snapshot()[0]?.circuit).toBe('OPEN'),
+  );
+  expect(operation).toHaveBeenCalledTimes(2);
+  reject[1]!(new MusicError('PROVIDER_UNAVAILABLE', 'Unavailable', true));
+  await Promise.all(failures);
+  supervisor.close();
+});
+
 it('honors Retry-After and bounded exponential retry without retrying authorization', async () => {
   let now = 0;
   const sleep = vi.fn(async (ms: number) => {

@@ -81,7 +81,6 @@ export function selectAudioFormat(
 }
 
 export interface YtDlpOptions {
-  resources?: ProcessRegistry;
   executable?: string;
   spawn?: typeof nodeSpawn;
   maxMetadataBytes?: number;
@@ -94,7 +93,11 @@ export class YtDlpStreamProvider implements StreamProvider {
   private readonly executable: string;
   private readonly maxMetadataBytes: number;
 
-  constructor(private readonly options: YtDlpOptions = {}) {
+  constructor(
+    private readonly options: YtDlpOptions & {
+      resources?: ProcessRegistry;
+    } = {},
+  ) {
     this.spawn = options.spawn ?? nodeSpawn;
     this.executable = options.executable ?? 'yt-dlp';
     this.maxMetadataBytes = options.maxMetadataBytes ?? 8_388_608;

@@ -7,6 +7,7 @@ import type { QueueEntry } from './queue.js';
 import type { PlaybackState } from '../playback/PlaybackStateMachine.js';
 
 export interface VoiceTarget {
+  signal?: AbortSignal;
   guildId: string;
   channelId: string;
   adapterCreator: DiscordGatewayAdapterCreator;

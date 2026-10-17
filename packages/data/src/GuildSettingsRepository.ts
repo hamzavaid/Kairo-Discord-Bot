@@ -311,16 +311,20 @@ export async function connectGuildSettings(
   close(): Promise<void>;
   health(): Promise<{ status: 'healthy' | 'unavailable' }>;
 }> {
-  const connection = await mongoose
-    .createConnection(uri, {
-      serverSelectionTimeoutMS: 5_000,
-      bufferCommands: false,
-      socketTimeoutMS: 5000,
-      connectTimeoutMS: 5000,
-      maxPoolSize: 10,
-      waitQueueTimeoutMS: 5000,
-    })
-    .asPromise();
+  const connection = mongoose.createConnection(uri, {
+    serverSelectionTimeoutMS: 5_000,
+    bufferCommands: false,
+    socketTimeoutMS: 5000,
+    connectTimeoutMS: 5000,
+    maxPoolSize: 10,
+    waitQueueTimeoutMS: 5000,
+  });
+  try {
+    await connection.asPromise();
+  } catch (error) {
+    await connection.close().catch(() => {});
+    throw error;
+  }
   const library = new MongoLibraryRepository(connection, options);
   const history = new MongoHistoryRepository(connection);
   const audit = new MongoAuditRepository(connection);

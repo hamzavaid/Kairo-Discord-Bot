@@ -1,4 +1,5 @@
 import { parseSeekTimestamp } from '@kairo/music-engine';
+import { withOperation } from '@kairo/shared';
 import { normalizeGuildControls } from '@kairo/data';
 import { lyricsChunks, resolveLyrics } from '../lyrics.js';
 import { pages } from '../../library/components.js';
@@ -68,6 +69,7 @@ const trackActions = new Set([
 ]);
 /** Message-local UI only. All playback and library state lives in services. */
 export class PlayerMenu {
+  private readonly abort = new AbortController();
   private readonly prefix: string;
   private readonly deadline = Date.now() + 300_000;
   private readonly state: PlayerViewState = {
@@ -212,7 +214,7 @@ export class PlayerMenu {
       }
       this.state.busy = true;
       const started = Date.now();
-      void this.execute(i, action)
+      void withOperation(this.abort.signal, () => this.execute(i, action))
         .then(() =>
           this.context.audit?.record({
             command: `player:${action.name}`,
@@ -236,6 +238,7 @@ export class PlayerMenu {
         });
     });
     collector.on('end', () => {
+      this.abort.abort();
       this.state.active = false;
       clearInterval(this.timer);
       void this.edit().catch((error) =>

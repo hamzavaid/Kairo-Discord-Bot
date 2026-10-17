@@ -10,6 +10,7 @@ import type { Track } from '../domain/Track.js';
 import { GuildQueue } from './GuildQueue.js';
 
 export interface QueueManagerOptions {
+  maxGuilds?: number;
   random?: () => number;
   maxEntries?: number;
   now?: () => Date;
@@ -20,11 +21,18 @@ export class QueueManager {
   private nextId = 0;
   private readonly random: () => number;
   private readonly maxEntries: number;
+  private readonly maxGuilds: number;
   private readonly now: () => Date;
 
   constructor(options: QueueManagerOptions = {}) {
     this.random = options.random ?? Math.random;
     this.maxEntries = options.maxEntries ?? 500;
+    this.maxGuilds = options.maxGuilds ?? 1000;
+    if (!Number.isInteger(this.maxGuilds) || this.maxGuilds < 1)
+      throw new MusicError(
+        'INVALID_QUERY',
+        'Guild queue limit must be positive.',
+      );
     this.now = options.now ?? (() => new Date());
     if (!Number.isInteger(this.maxEntries) || this.maxEntries < 1)
       throw new MusicError('INVALID_QUERY', 'Queue limit must be positive.');
@@ -34,6 +42,12 @@ export class QueueManager {
     if (!guildId) throw new MusicError('INVALID_QUERY', 'A guild is required.');
     let queue = this.queues.get(guildId);
     if (!queue) {
+      if (this.queues.size >= this.maxGuilds)
+        throw new MusicError(
+          'RESOURCE_BUSY',
+          'The guild queue limit has been reached.',
+          true,
+        );
       queue = new GuildQueue(guildId);
       this.queues.set(guildId, queue);
     }
@@ -41,7 +55,8 @@ export class QueueManager {
   }
 
   snapshot(guildId: string): QueueSnapshot {
-    return this.queue(guildId).snapshot();
+    if (!guildId) throw new MusicError('INVALID_QUERY', 'A guild is required.');
+    return (this.queues.get(guildId) ?? new GuildQueue(guildId)).snapshot();
   }
 
   async enqueueMany(
@@ -50,9 +65,15 @@ export class QueueManager {
     enqueuedBy: string,
     position: 'next' | 'last' = 'last',
     source: 'manual' | 'autoplay' = 'manual',
+    signal?: AbortSignal,
   ): Promise<QueueSnapshot> {
     const queue = this.queue(guildId);
     return queue.mutex.runExclusive(() => {
+      if (signal?.aborted)
+        throw new MusicError(
+          'STREAM_CANCELLED',
+          'Queue admission was cancelled.',
+        );
       if (position !== 'next' && position !== 'last')
         throw new MusicError(
           'INVALID_QUERY',

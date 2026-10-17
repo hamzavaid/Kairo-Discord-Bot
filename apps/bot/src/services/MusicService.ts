@@ -80,6 +80,14 @@ export class MusicService {
   }
 
   private async admitPlay(input: PlayInput, insertion?: 'next') {
+    return this.admit(input, (signal) =>
+      this.playAt({ ...input, signal }, insertion),
+    );
+  }
+  private async admit<T>(
+    input: { guildId: string; signal?: AbortSignal },
+    work: (signal: AbortSignal) => Promise<T>,
+  ): Promise<T> {
     const abort = new AbortController();
     const pending =
       this.pending.get(input.guildId) ?? new Set<AbortController>();
@@ -87,7 +95,7 @@ export class MusicService {
     this.pending.set(input.guildId, pending);
     try {
       return await this.scope.run(
-        (signal) => this.playAt({ ...input, signal }, insertion),
+        work,
         AbortSignal.any([
           abort.signal,
           ...(input.signal ? [input.signal] : []),
@@ -159,7 +167,7 @@ export class MusicService {
           'No matching song was found.',
         );
       const track = await abortable(
-        this.client.preparePlayable(metadata, signal),
+        this.client.preparePlayable(metadata, signal, guildId),
         signal,
       );
       check();
@@ -172,10 +180,7 @@ export class MusicService {
     }
     if (!connected) {
       await this.client.connectVoice(voiceTarget);
-      if (signal.aborted) {
-        await this.client.disconnectVoice(guildId);
-        check();
-      }
+      check();
       this.channels.set(guildId, voiceTarget.channelId);
     }
     check();
@@ -278,19 +283,42 @@ export class MusicService {
     return track;
   }
   async playTracks(input: {
+    signal?: AbortSignal;
     guildId: string;
     userId: string;
     voiceTarget: VoiceTarget;
     tracks: Track[];
     position?: 'next' | 'last';
   }): Promise<{ queued: number }> {
+    return this.admit(input, (signal) =>
+      this.queueTracks({ ...input, signal }),
+    );
+  }
+  private async queueTracks(input: {
+    guildId: string;
+    userId: string;
+    voiceTarget: VoiceTarget;
+    tracks: Track[];
+    position?: 'next' | 'last';
+    signal: AbortSignal;
+  }): Promise<{ queued: number }> {
+    const check = () => {
+      if (input.signal.aborted)
+        throw new MusicError(
+          'PARSER_CANCELLED',
+          'The music request was cancelled.',
+        );
+    };
+    check();
     if (!input.tracks.length)
       throw new MusicError('COLLECTION_EMPTY', 'The collection is empty.');
     this.assertVoiceChannel(input.guildId, input.voiceTarget.channelId);
     if (this.client.getPlayback(input.guildId).state === 'DISCONNECTED') {
       await this.client.connectVoice(input.voiceTarget);
+      check();
       this.channels.set(input.guildId, input.voiceTarget.channelId);
     }
+    check();
     await this.client.enqueueMany(
       input.guildId,
       input.tracks.map((track) => ({ ...track, requestedBy: input.userId })),

@@ -61,8 +61,15 @@ export class FFmpegPipeline {
         dispose: () => {
           if (closed) return;
           closed = true;
-          input.destroy();
-          source.dispose?.();
+          try {
+            input.destroy();
+          } finally {
+            try {
+              source.dispose?.();
+            } catch {
+              /* Independent upstream cleanup. */
+            }
+          }
         },
       };
     }
@@ -103,7 +110,11 @@ export class FFmpegPipeline {
           }) as ChildProcessWithoutNullStreams);
     } catch (error) {
       if (source.kind === 'readable') source.input.destroy();
-      source.dispose?.();
+      try {
+        source.dispose?.();
+      } catch {
+        /* Retain the typed startup error. */
+      }
       if (error instanceof MusicError) throw error;
       throw new MusicError('FFMPEG_ERROR', 'Audio conversion could not start.');
     }
@@ -111,11 +122,24 @@ export class FFmpegPipeline {
     const dispose = () => {
       if (closed) return;
       closed = true;
-      if (source.kind === 'readable') source.input.destroy();
-      source.dispose?.();
-      child.stdin.destroy();
-      child.stdout.destroy();
-      child.stderr.destroy();
+      for (const cleanup of [
+        () => {
+          if (source.kind === 'readable') {
+            source.input.unpipe(child.stdin);
+            source.input.destroy();
+          }
+        },
+        () => source.dispose?.(),
+        () => child.stdin.destroy(),
+        () => child.stdout.destroy(),
+        () => child.stderr.destroy(),
+      ]) {
+        try {
+          cleanup();
+        } catch {
+          /* Always reach process termination. */
+        }
+      }
       try {
         if (this.options.resources) this.options.resources.terminate(child);
         else child.kill();
@@ -125,6 +149,7 @@ export class FFmpegPipeline {
     };
     // Drain diagnostics without retaining raw input or unbounded stderr.
     child.stderr.on('data', () => {});
+    child.stderr.on('error', () => {});
     child.stdout.on('error', () => {});
     const fail = () => {
       if (!closed)

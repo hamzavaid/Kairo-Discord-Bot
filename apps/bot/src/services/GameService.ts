@@ -15,6 +15,12 @@ import {
 import type { Track, VoiceTarget } from '@kairo/music-engine';
 import { restoreTrack, type LibraryService } from './LibraryService.js';
 import type { MusicService } from './MusicService.js';
+import {
+  WorkScope,
+  OperationError,
+  currentOperationSignal,
+  WriteQueue,
+} from '@kairo/shared';
 export interface GameSetup {
   guildId: string;
   channelId: string;
@@ -62,6 +68,9 @@ export class GameService {
   readonly manager = new GameManager();
   private readonly active = new Map<string, Runtime>();
   private closing = false;
+  private readonly preparation = new WorkScope(20_000, 16);
+  private closeWork?: Promise<void>;
+  private readonly statistics: WriteQueue;
   private readonly finishing = new Set<Promise<void>>();
   constructor(
     readonly repository: GameRepository,
@@ -69,8 +78,23 @@ export class GameService {
     private readonly library: LibraryService,
     private readonly now: () => number = Date.now,
     private readonly random: () => number = Math.random,
-  ) {}
+    report: (error: unknown) => void = () => {},
+  ) {
+    this.statistics = new WriteQueue(512, 2000, report);
+  }
   async create(input: GameSetup): Promise<GameSession> {
+    try {
+      return await this.preparation.run(() => this.prepare(input));
+    } catch (error) {
+      if (error instanceof OperationError)
+        throw new GameError(
+          error.code === 'RESOURCE_BUSY' ? 'GAME_INVALID' : 'GAME_FINISHED',
+          error.message,
+        );
+      throw error;
+    }
+  }
+  private async prepare(input: GameSetup): Promise<GameSession> {
     requireGame(!this.closing, 'GAME_FINISHED', 'Games are shutting down.');
     const settings = await this.repository.settings(input.guildId);
     requireGame(
@@ -156,6 +180,7 @@ export class GameService {
           ? Math.min(60, settings.answerSeconds + 15)
           : settings.answerSeconds;
     requireGame(!this.closing, 'GAME_FINISHED', 'Games are shutting down.');
+    currentOperationSignal()?.throwIfAborted();
     const game = this.manager.create({
       guildId: input.guildId,
       channelId: input.channelId,
@@ -281,9 +306,9 @@ export class GameService {
           );
           delete runtime.leaseId;
         }
-        await Promise.all(
-          game.results().map((result) => this.repository.record(result)),
-        );
+        for (const result of game.results())
+          this.statistics.add(() => this.repository.record(result));
+        await this.statistics.drain();
         this.active.delete(game.options.id);
         this.manager.release(game);
       } catch (error) {
@@ -348,7 +373,12 @@ export class GameService {
       await this.sync(game);
   }
   async close() {
+    this.closeWork ??= this.cleanup();
+    return this.closeWork;
+  }
+  private async cleanup() {
     this.closing = true;
+    this.preparation.close();
     for (const fn of this.closers) fn();
     this.closers.clear();
     const active = [...this.active.values()];
@@ -365,6 +395,7 @@ export class GameService {
       }),
     );
     const persisted = await Promise.allSettled([...this.finishing]);
+    await this.statistics.close();
     this.active.clear();
     const failed = [...cleanup, ...persisted].find(
       (r) => r.status === 'rejected',
